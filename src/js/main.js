@@ -9,7 +9,7 @@ function createWindow() {
         height: 700,
         transparent: true,
         resizable: false,
-        icon: path.join(__dirname, '../assets/icon.png'),
+        icon: path.join(__dirname, '../assets/icon.ico'),
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: false
