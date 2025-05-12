@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facturas Holded - Solucions Socials Sostenibles</title>
+    <link rel="stylesheet" href="styles/style.css">
+</head>
+<body>
+    <header>
+        <div class="container" style="position: relative;">
+            <div class="logo-container">
+                <img src="assets/icon.png" alt="Solucions Socials Sostenibles Logo">
+            </div>
+            <div class="lang-selector">
+                <select id="langSelect">
+                    <option value="ca">Català</option>
+                    <option value="es">Español</option>
+                </select>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        <div id="dropOverlay" class="drop-overlay">
+            <span>Solta l'arxiu XML aquí</span>
+        </div>
+        <div class="main-content">
+            <h1>Procesador de Facturas Holded</h1>
+            
+            <div class="file-input-container">
+                <div class="file-input-group">
+                    <button id="selectFile">Selecciona arxiu XML</button>
+                    <span id="selectedFile">Cap arxiu seleccionat</span>
+                </div>
+                
+                <div class="file-input-group">
+                    <button id="selectFolder">Selecciona carpeta de destí</button>
+                    <span id="selectedFolder">Carpeta de destí no seleccionada</span>
+                </div>
+
+                <div class="file-input-group">
+                    <label for="outputFileName" style="min-width: 120px;">Nom de l'arxiu:</label>
+                    <input type="text" id="outputFileName" placeholder="Opcional. Ex: factura_modificada.xml" style="flex:1; padding: 0.5rem; border-radius: 4px; border: 1px solid #ccc;">
+                </div>
+
+                <button id="processFile">Processa arxiu</button>
+            </div>
+
+            <div id="loader" class="loader-container" style="display:none;">
+                <div class="loader"></div>
+            </div>
+
+            <div id="status" class="status"></div>
+        </div>
+    </main>
+
+    <footer class="container">
+        <p>© 2025 Solucions Socials Sostenibles - Tots els drets reservats</p>
+    </footer>
+
+    <script src="js/renderer.js"></script>
+</body>
+</html> 
