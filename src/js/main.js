@@ -77,7 +77,7 @@ ipcMain.handle('select-certificate', async () => {
 });
 
 // Procesar el archivo XML
-ipcMain.handle('process-xml', async (event, filePath, outputFolder, outputFileName, certPath, certPassword) => {
+ipcMain.handle('process-xml', async (event, filePath, outputFolder, outputFileName, certPath, certPassword, windowsCertSerial) => {
     try {
         const xmlData = fs.readFileSync(filePath, 'utf8');
         
@@ -103,10 +103,16 @@ ipcMain.handle('process-xml', async (event, filePath, outputFolder, outputFileNa
                 path.join(path.dirname(filePath), nuevoNombre);
 
             // Si se proporcionó un certificado, re-firmar el XML
-            if (certPath && certPassword) {
+            if (certPath && (certPassword || windowsCertSerial)) {
                 const signer = new FacturaeSigner();
-                const cert = await signer.loadCertificate(certPath);
-                const privateKey = await signer.loadPrivateKey(certPath, certPassword);
+                let cert, privateKey;
+                if (certPath === 'windows') {
+                    cert = await signer.loadCertificate('windows', windowsCertSerial);
+                    privateKey = null;
+                } else {
+                    cert = await signer.loadCertificate(certPath);
+                    privateKey = await signer.loadPrivateKey(certPath, certPassword);
+                }
                 const xmlFirmado = await signer.signXML(xmlModificado, cert, privateKey);
                 fs.writeFileSync(outputPath, xmlFirmado);
             } else {
@@ -124,5 +130,30 @@ ipcMain.handle('process-xml', async (event, filePath, outputFolder, outputFileNa
     } catch (error) {
         console.error('Error al procesar el XML:', error);
         return { success: false, error: error.message };
+    }
+});
+
+// Handler para obtener la lista de certificados de Windows
+ipcMain.handle('get-windows-certificates', async () => {
+    const { exec } = require('child_process');
+    const util = require('util');
+    const execPromise = util.promisify(exec);
+    try {
+        // Ejecutar certutil para listar los certificados del usuario actual
+        const { stdout } = await execPromise('certutil -user -store My');
+        // Parsear la salida para extraer los nombres, emisores y números de serie
+        const certs = [];
+        const regex = /Serial Number: ([A-F0-9]+)[\s\S]*?Issuer: (.+)[\s\S]*?Subject: (.+)/g;
+        let match;
+        while ((match = regex.exec(stdout)) !== null) {
+            certs.push({
+                serialNumber: match[1].trim(),
+                issuer: match[2].trim(),
+                subject: match[3].trim()
+            });
+        }
+        return certs;
+    } catch (error) {
+        return [];
     }
 }); 

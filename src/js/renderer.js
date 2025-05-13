@@ -135,30 +135,41 @@ document.addEventListener('DOMContentLoaded', () => {
     const certTypeRadios = document.getElementsByName('certType');
     const certificateFileGroup = document.getElementById('certificateFileGroup');
     const certificatePasswordGroup = document.getElementById('certificatePasswordGroup');
+    const windowsCertSelectGroup = document.getElementById('windowsCertSelectGroup');
+    const windowsCertSelect = document.getElementById('windowsCertSelect');
     const fileInputContainer = document.querySelector('.file-input-container');
 
     certTypeRadios.forEach(radio => {
-        radio.addEventListener('change', (e) => {
+        radio.addEventListener('change', async (e) => {
             if (e.target.value === 'windows') {
-                // Primero removemos las clases de visibilidad
+                // Mostrar el select de certificados de Windows
+                windowsCertSelectGroup.style.display = 'flex';
+                // Ocultar los campos de archivo y contraseña
+                certificateFileGroup.style.display = 'none';
+                certificatePasswordGroup.style.display = 'none';
                 certificateFileGroup.classList.remove('visible');
                 certificatePasswordGroup.classList.remove('visible');
                 fileInputContainer.classList.remove('expanded');
-                
-                // Esperamos a que termine la animación antes de ocultar
-                setTimeout(() => {
-                    certificateFileGroup.style.display = 'none';
-                    certificatePasswordGroup.style.display = 'none';
-                }, 300);
+                // Pedir la lista de certificados
+                windowsCertSelect.innerHTML = '<option value="">Cargando certificados...</option>';
+                const certs = await ipcRenderer.invoke('get-windows-certificates');
+                if (certs.length === 0) {
+                    windowsCertSelect.innerHTML = '<option value="">No se encontraron certificados</option>';
+                } else {
+                    windowsCertSelect.innerHTML = '';
+                    certs.forEach((cert, idx) => {
+                        const option = document.createElement('option');
+                        option.value = cert.serialNumber;
+                        option.textContent = `${cert.subject} | ${cert.issuer} | Nº Serie: ${cert.serialNumber}`;
+                        windowsCertSelect.appendChild(option);
+                    });
+                }
             } else {
-                // Primero mostramos los elementos
+                windowsCertSelectGroup.style.display = 'none';
                 certificateFileGroup.style.display = 'flex';
                 certificatePasswordGroup.style.display = 'flex';
-                
                 // Forzamos un reflow
                 certificateFileGroup.offsetHeight;
-                
-                // Añadimos las clases para la animación
                 fileInputContainer.classList.add('expanded');
                 setTimeout(() => {
                     certificateFileGroup.classList.add('visible');
@@ -199,11 +210,27 @@ document.getElementById('processFile').addEventListener('click', async () => {
     const certType = document.querySelector('input[name="certType"]:checked').value;
     let certPath = 'windows';
     let certPassword = '';
+    let windowsCertSerial = '';
+
+    if (certType === 'windows') {
+        windowsCertSerial = document.getElementById('windowsCertSelect').value;
+        if (!windowsCertSerial) {
+            showStatus('Por favor, selecciona un certificado de Windows', 'error');
+            return;
+        }
+        // Mostrar mensaje de confirmación con los datos del certificado
+        const selectedOption = document.getElementById('windowsCertSelect').selectedOptions[0];
+        const certInfo = selectedOption.textContent;
+        const confirmMsg = `¿Deseas firmar usando este certificado?\n\n${certInfo}`;
+        if (!window.confirm(confirmMsg)) {
+            showStatus('Firma cancelada por el usuario.', 'error');
+            return;
+        }
+    }
 
     if (certType === 'file') {
         certPath = document.getElementById('certificate').value;
         certPassword = document.getElementById('certPassword').value;
-        
         if (!certPath) {
             showStatus(translations[currentLang].selectCertError, 'error');
             return;
@@ -232,7 +259,7 @@ document.getElementById('processFile').addEventListener('click', async () => {
 
     showLoader(true);
     try {
-        const result = await ipcRenderer.invoke('process-xml', filePath, folderPath, outputFileName, certPath, certPassword);
+        const result = await ipcRenderer.invoke('process-xml', filePath, folderPath, outputFileName, certPath, certPassword, windowsCertSerial);
         
         if (result.success) {
             showStatus(translations[currentLang].success + result.newFileName, 'success');

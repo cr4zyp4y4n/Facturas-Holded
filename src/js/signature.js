@@ -23,16 +23,28 @@ class FacturaeSigner {
         });
     }
 
-    async loadCertificate(certPath) {
+    async loadCertificate(certPath, windowsCertSerial = null) {
         try {
             // Si el certificado está en el almacén de Windows
             if (certPath === 'windows') {
-                const { stdout } = await execPromise('certutil -user -p "" -dump');
-                const certData = this.extractCertificateFromWindowsStore(stdout);
-                if (!certData) {
-                    throw new Error('No se encontró ningún certificado válido en el almacén de Windows');
+                // Listar todos los certificados
+                const { stdout } = await execPromise('certutil -user -store My');
+                // Buscar el certificado por número de serie
+                const regex = /Serial Number: ([A-F0-9]+)[\s\S]*?-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
+                let match;
+                let foundCert = null;
+                while ((match = regex.exec(stdout)) !== null) {
+                    const serial = match[1].trim();
+                    const pem = match[0].match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/)[0];
+                    if (!windowsCertSerial || serial === windowsCertSerial) {
+                        foundCert = pem;
+                        if (serial === windowsCertSerial) break;
+                    }
                 }
-                return forge.pki.certificateFromPem(certData);
+                if (!foundCert) {
+                    throw new Error('No se encontró el certificado seleccionado en el almacén de Windows');
+                }
+                return forge.pki.certificateFromPem(foundCert);
             }
 
             // Si es un archivo de certificado .p12
