@@ -19,7 +19,17 @@ const translations = {
         dragSuccess: 'Arxiu XML seleccionat per arrossegar.',
         dragError: 'Només es permeten arxius XML.',
         dropText: 'Suelta l\'arxiu XML aquí',
-        copyright: 'Tots els drets reservats'
+        copyright: 'Tots els drets reservats',
+        certificateTitle: 'Certificat digital:',
+        useWindowsCert: 'Utilitzar certificat de Windows',
+        selectFileCert: 'Seleccionar arxiu de certificat',
+        certificateFile: 'Arxiu de certificat:',
+        certificateFilePlaceholder: 'Selecciona un arxiu .p12',
+        selectCertificate: 'Seleccionar',
+        certificatePassword: 'Contrasenya del certificat:',
+        certificatePasswordPlaceholder: 'Introdueix la contrasenya',
+        selectCertError: 'Si us plau, selecciona un arxiu de certificat',
+        enterPasswordError: 'Si us plau, introdueix la contrasenya del certificat'
     },
     es: {
         h1: 'Procesador de Facturas Holded',
@@ -38,7 +48,17 @@ const translations = {
         dragSuccess: 'Archivo XML seleccionado por arrastrar.',
         dragError: 'Solo se permiten archivos XML.',
         dropText: 'Suelta el archivo XML aquí',
-        copyright: 'Todos los derechos reservados'
+        copyright: 'Todos los derechos reservados',
+        certificateTitle: 'Certificado digital:',
+        useWindowsCert: 'Usar certificado de Windows',
+        selectFileCert: 'Seleccionar archivo de certificado',
+        certificateFile: 'Archivo de certificado:',
+        certificateFilePlaceholder: 'Selecciona un archivo .p12',
+        selectCertificate: 'Seleccionar',
+        certificatePassword: 'Contraseña del certificado:',
+        certificatePasswordPlaceholder: 'Introduce la contraseña',
+        selectCertError: 'Por favor, selecciona un archivo de certificado',
+        enterPasswordError: 'Por favor, introduce la contraseña del certificado'
     }
 };
 
@@ -58,6 +78,14 @@ function setLang(lang) {
     document.getElementById('dropOverlay').querySelector('span').textContent = t.dropText;
     document.querySelector('footer p').textContent = `© 2025 Solucions Socials Sostenibles - ${t.copyright}`;
     document.title = lang === 'ca' ? 'Processador de Factures Holded - Solucions Socials Sostenibles' : 'Procesador de Facturas Holded - Solucions Socials Sostenibles';
+    document.querySelector('.section-title').textContent = t.certificateTitle;
+    document.querySelector('label[for="windowsCert"]').textContent = t.useWindowsCert;
+    document.querySelector('label[for="fileCert"]').textContent = t.selectFileCert;
+    document.querySelector('label[for="certificate"]').textContent = t.certificateFile;
+    document.getElementById('certificate').placeholder = t.certificateFilePlaceholder;
+    document.getElementById('selectCertificate').textContent = t.selectCertificate;
+    document.querySelector('label[for="certPassword"]').textContent = t.certificatePassword;
+    document.getElementById('certPassword').placeholder = t.certificatePasswordPlaceholder;
     // Limpiar mensajes de estado
     showStatus('', '');
 }
@@ -102,6 +130,43 @@ document.addEventListener('DOMContentLoaded', () => {
         setLang(e.target.value);
     });
     setLang(currentLang);
+
+    // Manejar la selección del tipo de certificado
+    const certTypeRadios = document.getElementsByName('certType');
+    const certificateFileGroup = document.getElementById('certificateFileGroup');
+    const certificatePasswordGroup = document.getElementById('certificatePasswordGroup');
+    const fileInputContainer = document.querySelector('.file-input-container');
+
+    certTypeRadios.forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            if (e.target.value === 'windows') {
+                // Primero removemos las clases de visibilidad
+                certificateFileGroup.classList.remove('visible');
+                certificatePasswordGroup.classList.remove('visible');
+                fileInputContainer.classList.remove('expanded');
+                
+                // Esperamos a que termine la animación antes de ocultar
+                setTimeout(() => {
+                    certificateFileGroup.style.display = 'none';
+                    certificatePasswordGroup.style.display = 'none';
+                }, 300);
+            } else {
+                // Primero mostramos los elementos
+                certificateFileGroup.style.display = 'flex';
+                certificatePasswordGroup.style.display = 'flex';
+                
+                // Forzamos un reflow
+                certificateFileGroup.offsetHeight;
+                
+                // Añadimos las clases para la animación
+                fileInputContainer.classList.add('expanded');
+                setTimeout(() => {
+                    certificateFileGroup.classList.add('visible');
+                    certificatePasswordGroup.classList.add('visible');
+                }, 10);
+            }
+        });
+    });
 });
 
 document.getElementById('selectFile').addEventListener('click', async () => {
@@ -118,10 +183,36 @@ document.getElementById('selectFolder').addEventListener('click', async () => {
     }
 });
 
+document.getElementById('selectCertificate').addEventListener('click', async () => {
+    const certPath = await ipcRenderer.invoke('select-certificate');
+    if (certPath) {
+        document.getElementById('certificate').value = certPath;
+    }
+});
+
 document.getElementById('processFile').addEventListener('click', async () => {
     const filePath = document.getElementById('selectedFile').textContent;
     const folderPath = document.getElementById('selectedFolder').textContent;
     const outputFileName = document.getElementById('outputFileName').value.trim();
+    
+    // Obtener el tipo de certificado seleccionado
+    const certType = document.querySelector('input[name="certType"]:checked').value;
+    let certPath = 'windows';
+    let certPassword = '';
+
+    if (certType === 'file') {
+        certPath = document.getElementById('certificate').value;
+        certPassword = document.getElementById('certPassword').value;
+        
+        if (!certPath) {
+            showStatus(translations[currentLang].selectCertError, 'error');
+            return;
+        }
+        if (!certPassword) {
+            showStatus(translations[currentLang].enterPasswordError, 'error');
+            return;
+        }
+    }
     
     // Validación avanzada del nombre de archivo
     const invalidChars = /[\\/:*?"<>|]/g;
@@ -134,14 +225,24 @@ document.getElementById('processFile').addEventListener('click', async () => {
         return;
     }
 
+    if (!folderPath) {
+        showStatus('Por favor, selecciona una carpeta de destino', 'error');
+        return;
+    }
+
     showLoader(true);
-    const result = await ipcRenderer.invoke('process-xml', filePath, folderPath, outputFileName);
-    showLoader(false);
-    
-    if (result.success) {
-        showStatus(translations[currentLang].success + result.newFileName, 'success');
-    } else {
-        showStatus(translations[currentLang].error + result.error, 'error');
+    try {
+        const result = await ipcRenderer.invoke('process-xml', filePath, folderPath, outputFileName, certPath, certPassword);
+        
+        if (result.success) {
+            showStatus(translations[currentLang].success + result.newFileName, 'success');
+        } else {
+            showStatus(translations[currentLang].error + result.error, 'error');
+        }
+    } catch (error) {
+        showStatus(`Error: ${error.message}`, 'error');
+    } finally {
+        showLoader(false);
     }
 });
 
@@ -154,4 +255,19 @@ function showStatus(message, type) {
 function showLoader(show) {
     const loader = document.getElementById('loader');
     loader.style.display = show ? 'flex' : 'none';
+}
+
+function togglePassword() {
+    const passwordInput = document.getElementById('certPassword');
+    const toggleButton = document.querySelector('.toggle-password i');
+    
+    if (passwordInput.type === 'password') {
+        passwordInput.type = 'text';
+        toggleButton.classList.remove('fa-eye');
+        toggleButton.classList.add('fa-eye-slash');
+    } else {
+        passwordInput.type = 'password';
+        toggleButton.classList.remove('fa-eye-slash');
+        toggleButton.classList.add('fa-eye');
+    }
 } 

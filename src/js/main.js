@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { XMLParser, XMLBuilder } = require('fast-xml-parser');
+const FacturaeSigner = require('./signature');
 
 function createWindow() {
     const win = new BrowserWindow({
@@ -60,8 +61,23 @@ ipcMain.handle('select-output-folder', async () => {
     return null;
 });
 
+// Manejar la selección del certificado
+ipcMain.handle('select-certificate', async () => {
+    const result = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        filters: [
+            { name: 'Certificados', extensions: ['p12', 'pfx'] }
+        ]
+    });
+    
+    if (!result.canceled) {
+        return result.filePaths[0];
+    }
+    return null;
+});
+
 // Procesar el archivo XML
-ipcMain.handle('process-xml', async (event, filePath, outputFolder, outputFileName) => {
+ipcMain.handle('process-xml', async (event, filePath, outputFolder, outputFileName, certPath, certPassword) => {
     try {
         const xmlData = fs.readFileSync(filePath, 'utf8');
         
@@ -75,7 +91,6 @@ ipcMain.handle('process-xml', async (event, filePath, outputFolder, outputFileNa
             
             let nuevoNombre = null;
             if (outputFileName && outputFileName.length > 0) {
-                // Asegurarse de que termina en .xml
                 nuevoNombre = outputFileName.endsWith('.xml') ? outputFileName : `${outputFileName}.xml`;
             } else {
                 const nombreArchivo = path.basename(filePath);
@@ -83,12 +98,21 @@ ipcMain.handle('process-xml', async (event, filePath, outputFolder, outputFileNa
                 nuevoNombre = `${nombreSinExtension}_holded.xml`;
             }
             
-            // Usar la carpeta de destino si se especificó, sino usar la misma carpeta del archivo original
             const outputPath = outputFolder ? 
                 path.join(outputFolder, nuevoNombre) : 
                 path.join(path.dirname(filePath), nuevoNombre);
-            
-            fs.writeFileSync(outputPath, xmlModificado);
+
+            // Si se proporcionó un certificado, re-firmar el XML
+            if (certPath && certPassword) {
+                const signer = new FacturaeSigner();
+                const cert = await signer.loadCertificate(certPath);
+                const privateKey = await signer.loadPrivateKey(certPath, certPassword);
+                const xmlFirmado = await signer.signXML(xmlModificado, cert, privateKey);
+                fs.writeFileSync(outputPath, xmlFirmado);
+            } else {
+                fs.writeFileSync(outputPath, xmlModificado);
+            }
+
             return { 
                 success: true, 
                 newFileName: nuevoNombre,

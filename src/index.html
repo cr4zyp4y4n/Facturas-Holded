@@ -44,6 +44,51 @@
                     <input type="text" id="outputFileName" placeholder="Opcional. Ex: factura_modificada.xml" style="flex:1; padding: 0.5rem; border-radius: 4px; border: 1px solid #ccc;">
                 </div>
 
+                <div class="file-input-group certificate-section">
+                    <label class="section-title">Certificado digital:</label>
+                    <div class="certificate-options">
+                        <div class="certificate-option">
+                            <input type="radio" id="windowsCert" name="certType" value="windows" checked>
+                            <label for="windowsCert" class="certificate-label">
+                                <i class="fas fa-windows"></i>
+                                Usar certificado de Windows
+                            </label>
+                        </div>
+                        <div class="certificate-option">
+                            <input type="radio" id="fileCert" name="certType" value="file">
+                            <label for="fileCert" class="certificate-label">
+                                <i class="fas fa-file-certificate"></i>
+                                Seleccionar archivo de certificado
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="certificateFileGroup" class="file-input-group certificate-file-section" style="display: none;">
+                    <div class="certificate-file-input">
+                        <label for="certificate">Archivo de certificado:</label>
+                        <div class="certificate-input-group">
+                            <input type="text" id="certificate" readonly placeholder="Selecciona un archivo .p12">
+                            <button id="selectCertificate" class="select-button">
+                                <i class="fas fa-folder-open"></i>
+                                Seleccionar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="certificatePasswordGroup" class="file-input-group certificate-password-section" style="display: none;">
+                    <div class="certificate-password-input">
+                        <label for="certPassword">Contraseña del certificado:</label>
+                        <div class="password-input-group">
+                            <input type="password" id="certPassword" placeholder="Introduce la contraseña">
+                            <button type="button" class="toggle-password" onclick="togglePassword()">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <button id="processFile">Processa arxiu</button>
             </div>
 
