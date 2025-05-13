@@ -65,106 +65,38 @@ ipcMain.handle('process-xml', async (event, filePath, outputFolder, outputFileNa
     try {
         const xmlData = fs.readFileSync(filePath, 'utf8');
         
-        const parser = new XMLParser({
-            ignoreAttributes: false,
-            attributeNamePrefix: "@_",
-            preserveOrder: true,
-            parseAttributeValue: true,
-            parseTagValue: true,
-            trimValues: true,
-            processEntities: true,
-            format: true,
-            declaration: true,
-            isArray: (name, jpath, isLeafNode, isAttribute) => {
-                return false;
+        // Encontrar y reemplazar solo el InvoiceNumber
+        const invoiceNumberRegex = /<InvoiceNumber>([^<]+)<\/InvoiceNumber>/;
+        const seriesCodeMatch = xmlData.match(/<InvoiceSeriesCode>([^<]+)<\/InvoiceSeriesCode>/);
+        
+        if (seriesCodeMatch) {
+            const seriesCode = seriesCodeMatch[1];
+            const xmlModificado = xmlData.replace(invoiceNumberRegex, `<InvoiceNumber>${seriesCode}</InvoiceNumber>`);
+            
+            let nuevoNombre = null;
+            if (outputFileName && outputFileName.length > 0) {
+                // Asegurarse de que termina en .xml
+                nuevoNombre = outputFileName.endsWith('.xml') ? outputFileName : `${outputFileName}.xml`;
+            } else {
+                const nombreArchivo = path.basename(filePath);
+                const nombreSinExtension = path.parse(nombreArchivo).name;
+                nuevoNombre = `${nombreSinExtension}_holded.xml`;
             }
-        });
-        
-        const resultado = parser.parse(xmlData);
-        
-        // Función recursiva para encontrar y modificar InvoiceNumber
-        function modificarInvoiceNumberPO(obj) {
-            if (Array.isArray(obj)) {
-                for (const item of obj) {
-                    modificarInvoiceNumberPO(item);
-                }
-            } else if (typeof obj === 'object' && obj !== null) {
-                // Buscar InvoiceHeader
-                if (obj.hasOwnProperty('InvoiceHeader')) {
-                    let seriesCode = null;
-                    let invoiceNumberKey = null;
-                    // Buscar InvoiceSeriesCode e InvoiceNumber
-                    for (const headerItem of obj.InvoiceHeader) {
-                        if (headerItem.hasOwnProperty('InvoiceSeriesCode')) {
-                            // Puede ser array o string
-                            if (Array.isArray(headerItem.InvoiceSeriesCode)) {
-                                seriesCode = headerItem.InvoiceSeriesCode[0]['#text'] || headerItem.InvoiceSeriesCode[0];
-                            } else {
-                                seriesCode = headerItem.InvoiceSeriesCode;
-                            }
-                        }
-                        if (headerItem.hasOwnProperty('InvoiceNumber')) {
-                            invoiceNumberKey = headerItem;
-                        }
-                    }
-                    // Modificar InvoiceNumber si ambos existen
-                    if (seriesCode && invoiceNumberKey) {
-                        invoiceNumberKey.InvoiceNumber = [{ '#text': seriesCode }];
-                        console.log('InvoiceNumber modificado a:', seriesCode);
-                    }
-                }
-                // Recursividad para el resto de claves
-                for (const key in obj) {
-                    modificarInvoiceNumberPO(obj[key]);
-                }
-            }
-        }
-        modificarInvoiceNumberPO(resultado);
-        
-        const builder = new XMLBuilder({
-            ignoreAttributes: false,
-            attributeNamePrefix: "@_",
-            preserveOrder: true,
-            format: true,
-            indentBy: "  ",
-            suppressBooleanAttributes: false,
-            processEntities: true,
-            declaration: true,
-            declarationOptions: {
-                version: '1.0',
-                encoding: 'UTF-8'
-            }
-        });
-        
-        let xmlModificado = builder.build(resultado);
-        // Forzar la declaración correcta
-        xmlModificado = xmlModificado.replace(/<\?xml version="1" encoding="UTF-8"\?>/, '<?xml version="1.0" encoding="UTF-8"?>');
-        // Corregir los namespaces
-        xmlModificado = xmlModificado.replace('<fe:Facturae>', '<fe:Facturae xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:fe="http://www.facturae.gob.es/formato/Versiones/Facturaev3_2_2.xml" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">');
-        xmlModificado = xmlModificado.replace(/<xmlns:ds>.*?<\/xmlns:ds>/g, '');
-        xmlModificado = xmlModificado.replace(/<xmlns:fe>.*?<\/xmlns:fe>/g, '');
-        xmlModificado = xmlModificado.replace(/<xmlns:xsi>.*?<\/xmlns:xsi>/g, '');
-        
-        let nuevoNombre = null;
-        if (outputFileName && outputFileName.length > 0) {
-            // Asegurarse de que termina en .xml
-            nuevoNombre = outputFileName.endsWith('.xml') ? outputFileName : `${outputFileName}.xml`;
+            
+            // Usar la carpeta de destino si se especificó, sino usar la misma carpeta del archivo original
+            const outputPath = outputFolder ? 
+                path.join(outputFolder, nuevoNombre) : 
+                path.join(path.dirname(filePath), nuevoNombre);
+            
+            fs.writeFileSync(outputPath, xmlModificado);
+            return { 
+                success: true, 
+                newFileName: nuevoNombre,
+                outputPath: outputPath
+            };
         } else {
-            const nombreArchivo = path.basename(filePath);
-            const nombreSinExtension = path.parse(nombreArchivo).name;
-            nuevoNombre = `${nombreSinExtension}_holded.xml`;
+            throw new Error('No se encontró el código de serie en el XML');
         }
-        // Usar la carpeta de destino si se especificó, sino usar la misma carpeta del archivo original
-        const outputPath = outputFolder ? 
-            path.join(outputFolder, nuevoNombre) : 
-            path.join(path.dirname(filePath), nuevoNombre);
-        
-        fs.writeFileSync(outputPath, xmlModificado);
-        return { 
-            success: true, 
-            newFileName: nuevoNombre,
-            outputPath: outputPath
-        };
     } catch (error) {
         console.error('Error al procesar el XML:', error);
         return { success: false, error: error.message };
