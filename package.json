@@ -49,7 +49,9 @@
       "target": "nsis",
       "icon": "src/assets/icon.ico",
       "requestedExecutionLevel": "asInvoker",
-      "signAndEditExecutable": false
+      "signAndEditExecutable": false,
+      "publisherName": "Solucions Socials Sostenibles",
+      "legalTrademarks": "© 2024 Solucions Socials Sostenibles"
     },
     "nsis": {
       "oneClick": false,
@@ -59,7 +61,10 @@
       "shortcutName": "Facturas Holded",
       "installerIcon": "src/assets/icon.ico",
       "uninstallerIcon": "src/assets/icon.ico",
-      "installerHeaderIcon": "src/assets/icon.ico"
+      "installerHeaderIcon": "src/assets/icon.ico",
+      "displayLanguageSelector": false,
+      "license": "LICENSE",
+      "include": "installer.nsh"
     },
     "mac": {
       "target": ["dmg"],
