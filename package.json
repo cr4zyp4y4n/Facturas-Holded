@@ -49,10 +49,7 @@
       "target": "nsis",
       "icon": "src/assets/icon.ico",
       "requestedExecutionLevel": "asInvoker",
-      "signAndEditExecutable": false,
-      "artifactName": "${productName}-Setup-${version}.${ext}",
-      "uninstallDisplayName": "${productName}",
-      "shortcutName": "${productName}"
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
