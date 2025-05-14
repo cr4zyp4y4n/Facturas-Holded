@@ -1,6 +1,6 @@
 {
   "name": "facturas-holded",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Procesador de XML Facturae para Holded",
   "main": "src/js/main.js",
   "scripts": {
