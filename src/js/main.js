@@ -139,21 +139,59 @@ ipcMain.handle('get-windows-certificates', async () => {
     const util = require('util');
     const execPromise = util.promisify(exec);
     try {
-        // Ejecutar certutil para listar los certificados del usuario actual
-        const { stdout } = await execPromise('certutil -user -store My');
-        // Parsear la salida para extraer los nombres, emisores y números de serie
+        console.log('Ejecutando certutil para listar certificados...');
+        const { stdout, stderr } = await execPromise('certutil -user -store My');
+        if (stderr) console.error('Error de certutil:', stderr);
+
         const certs = [];
-        const regex = /Serial Number: ([A-F0-9]+)[\s\S]*?Issuer: (.+)[\s\S]*?Subject: (.+)/g;
-        let match;
-        while ((match = regex.exec(stdout)) !== null) {
-            certs.push({
-                serialNumber: match[1].trim(),
-                issuer: match[2].trim(),
-                subject: match[3].trim()
-            });
-        }
+        // Dividir la salida por certificados
+        const certBlocks = stdout.split('================ Certificado');
+        
+        certBlocks.forEach((block, index) => {
+            if (block.includes('Se ha pasado la prueba de firma')) {
+                // Extraer número de serie (buscando después de "serie:")
+                const serialMatch = block.match(/serie:\s*([A-F0-9]+)/i);
+                const serialNumber = serialMatch ? serialMatch[1].trim() : null;
+                
+                // Extraer emisor
+                const issuerLine = block.split('\n').find(line => 
+                    line.toLowerCase().includes('emisor')
+                );
+                const issuer = issuerLine ? issuerLine.split(':')[1].trim() : null;
+                
+                // Extraer sujeto
+                const subjectLine = block.split('\n').find(line => 
+                    line.toLowerCase().includes('sujeto')
+                );
+                const subject = subjectLine ? subjectLine.split(':')[1].trim() : null;
+                
+                console.log('Datos extraídos:', {
+                    serialNumber,
+                    issuer,
+                    subject
+                });
+                
+                if (serialNumber && issuer && subject) {
+                    const cert = {
+                        serialNumber,
+                        issuer,
+                        subject
+                    };
+                    console.log('Añadiendo certificado:', cert);
+                    certs.push(cert);
+                } else {
+                    console.log('No se pudieron extraer todos los datos del certificado');
+                    if (!serialNumber) console.log('No se pudo extraer el número de serie');
+                    if (!issuer) console.log('No se pudo extraer el emisor');
+                    if (!subject) console.log('No se pudo extraer el sujeto');
+                }
+            }
+        });
+
+        console.log('Certificados encontrados:', certs);
         return certs;
     } catch (error) {
+        console.error('Error al ejecutar certutil:', error);
         return [];
     }
 }); 

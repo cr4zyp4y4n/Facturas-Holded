@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
 const util = require('util');
+const { app } = require('electron');
 const execPromise = util.promisify(exec);
 
 class FacturaeSigner {
@@ -27,24 +28,59 @@ class FacturaeSigner {
         try {
             // Si el certificado está en el almacén de Windows
             if (certPath === 'windows') {
-                // Listar todos los certificados
-                const { stdout } = await execPromise('certutil -user -store My');
-                // Buscar el certificado por número de serie
-                const regex = /Serial Number: ([A-F0-9]+)[\s\S]*?-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
-                let match;
-                let foundCert = null;
-                while ((match = regex.exec(stdout)) !== null) {
-                    const serial = match[1].trim();
-                    const pem = match[0].match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/)[0];
-                    if (!windowsCertSerial || serial === windowsCertSerial) {
-                        foundCert = pem;
-                        if (serial === windowsCertSerial) break;
+                console.log('Buscando certificado en Windows con número de serie:', windowsCertSerial);
+                
+                // Primero verificamos que el certificado existe y es válido
+                console.log('Verificando certificado con certutil -store...');
+                const { stdout: verifyStdout } = await execPromise(`certutil -user -store My "${windowsCertSerial}"`);
+                console.log('Salida de verificación:', verifyStdout);
+                
+                // Verificar que el certificado es válido
+                if (!verifyStdout.includes('Se ha pasado la prueba de firma')) {
+                    throw new Error('El certificado no ha pasado la prueba de firma');
+                }
+
+                // Extraer información del certificado
+                const hashMatch = verifyStdout.match(/Hash de cert\(sha1\): ([0-9a-f]+)/i);
+                const providerMatch = verifyStdout.match(/Proveedor = ([^\r\n]+)/);
+                const containerMatch = verifyStdout.match(/Contenedor de claves = ([^\r\n]+)/);
+                
+                if (!hashMatch || !providerMatch || !containerMatch) {
+                    throw new Error('No se pudo extraer toda la información del certificado');
+                }
+                
+                const certInfo = {
+                    hash: hashMatch[1],
+                    provider: providerMatch[1].trim(),
+                    container: containerMatch[1].trim()
+                };
+                
+                console.log('Información del certificado:', certInfo);
+                
+                // Crear un objeto de certificado virtual
+                const cert = {
+                    publicKey: {
+                        toString: () => {
+                            // Devolver una representación del certificado
+                            return `Windows Certificate Store: ${certInfo.hash}`;
+                        }
+                    },
+                    issuer: {
+                        toString: () => {
+                            // Extraer el emisor de la salida
+                            const issuerMatch = verifyStdout.match(/Emisor: ([^\r\n]+)/);
+                            return issuerMatch ? issuerMatch[1].trim() : 'Unknown';
+                        }
+                    },
+                    serialNumber: windowsCertSerial,
+                    validity: {
+                        notBefore: new Date(),
+                        notAfter: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) // 1 año
                     }
-                }
-                if (!foundCert) {
-                    throw new Error('No se encontró el certificado seleccionado en el almacén de Windows');
-                }
-                return forge.pki.certificateFromPem(foundCert);
+                };
+                
+                console.log('Certificado virtual creado exitosamente');
+                return cert;
             }
 
             // Si es un archivo de certificado .p12
@@ -111,6 +147,44 @@ class FacturaeSigner {
             // Eliminar la firma existente si existe
             if (xmlObj['ds:Signature']) {
                 delete xmlObj['ds:Signature'];
+            }
+
+            // Si es un certificado de Windows
+            if (cert.publicKey.toString().startsWith('Windows Certificate Store:')) {
+                console.log('Usando certificado de Windows para firmar...');
+                
+                // Crear un archivo temporal con el XML
+                const tempDir = path.join(app.getPath('temp'), 'facturae-xml');
+                if (!fs.existsSync(tempDir)) {
+                    fs.mkdirSync(tempDir);
+                }
+                
+                const tempXmlPath = path.join(tempDir, `temp_${Date.now()}.xml`);
+                fs.writeFileSync(tempXmlPath, xmlContent);
+                
+                // Extraer el hash del certificado
+                const certHash = cert.publicKey.toString().split(':')[1].trim();
+                console.log('Usando certificado con hash:', certHash);
+                
+                // Firmar usando certutil
+                const { stdout: signStdout, stderr: signStderr } = await execPromise(
+                    `certutil -user -sign "${certHash}" "${tempXmlPath}"`
+                );
+                
+                if (signStderr) {
+                    console.error('Error al firmar:', signStderr);
+                    throw new Error('Error al firmar el XML con certutil');
+                }
+                
+                console.log('Salida de firma:', signStdout);
+                
+                // Leer el XML firmado
+                const signedXml = fs.readFileSync(tempXmlPath, 'utf8');
+                
+                // Limpiar el archivo temporal
+                fs.unlinkSync(tempXmlPath);
+                
+                return signedXml;
             }
 
             // Crear la firma XAdES
