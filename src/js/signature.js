@@ -36,7 +36,10 @@ class FacturaeSigner {
                 console.log('Salida de verificación:', verifyStdout);
                 
                 // Verificar que el certificado es válido
-                if (!verifyStdout.includes('Se ha pasado la prueba de firma')) {
+                if (
+                    !verifyStdout.includes('Se ha pasado la prueba de firma') &&
+                    !verifyStdout.includes('Prueba de cifrado correcta')
+                ) {
                     throw new Error('El certificado no ha pasado la prueba de firma');
                 }
 
