@@ -1,7 +1,7 @@
 {
   "name": "facturas-holded",
-  "version": "1.0.7",
-  "description": "Procesador de XML Facturae para Holded",
+  "version": "1.0.8",
+  "description": "Procesador de XML Facturae para Holded con soporte para certificados de Windows y AutoFirma",
   "main": "src/js/main.js",
   "scripts": {
     "start": "electron .",
