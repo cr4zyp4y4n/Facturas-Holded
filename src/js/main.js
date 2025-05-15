@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { XMLParser, XMLBuilder } = require('fast-xml-parser');
-const FacturaeSigner = require('./signature');
+const { getAutoFirmaPath } = require('./signature');
 
 function createWindow() {
     const win = new BrowserWindow({
@@ -80,15 +80,28 @@ ipcMain.handle('select-certificate', async () => {
 ipcMain.handle('process-xml', async (event, filePath, outputFolder, outputFileName, certPath, certPassword, windowsCertSerial) => {
     try {
         const xmlData = fs.readFileSync(filePath, 'utf8');
+        console.log('XML original leído correctamente');
+        
+        // Limpiar firma anterior si existe
+        let xmlSinFirma = xmlData;
+        const firmaRegex = /<ds:Signature[\s\S]*?<\/ds:Signature>/g;
+        if (firmaRegex.test(xmlData)) {
+            console.log('Firma anterior encontrada, eliminándola...');
+            xmlSinFirma = xmlData.replace(firmaRegex, '');
+            console.log('Firma anterior eliminada');
+        } else {
+            console.log('No se encontró firma anterior');
+        }
         
         // Encontrar y reemplazar solo el InvoiceNumber
         const invoiceNumberRegex = /<InvoiceNumber>([^<]+)<\/InvoiceNumber>/;
-        const seriesCodeMatch = xmlData.match(/<InvoiceSeriesCode>([^<]+)<\/InvoiceSeriesCode>/);
+        const seriesCodeMatch = xmlSinFirma.match(/<InvoiceSeriesCode>([^<]+)<\/InvoiceSeriesCode>/);
         
         if (seriesCodeMatch) {
             const seriesCode = seriesCodeMatch[1];
-            const xmlModificado = xmlData.replace(invoiceNumberRegex, `<InvoiceNumber>${seriesCode}</InvoiceNumber>`);
-            
+            const xmlModificado = xmlSinFirma.replace(invoiceNumberRegex, `<InvoiceNumber>${seriesCode}</InvoiceNumber>`);
+            console.log('InvoiceNumber modificado correctamente');
+        
             let nuevoNombre = null;
             if (outputFileName && outputFileName.length > 0) {
                 nuevoNombre = outputFileName.endsWith('.xml') ? outputFileName : `${outputFileName}.xml`;
@@ -101,24 +114,82 @@ ipcMain.handle('process-xml', async (event, filePath, outputFolder, outputFileNa
             const outputPath = outputFolder ? 
                 path.join(outputFolder, nuevoNombre) : 
                 path.join(path.dirname(filePath), nuevoNombre);
+            
+            // Guardar el XML modificado
+            fs.writeFileSync(outputPath, xmlModificado);
+            console.log('XML guardado en:', outputPath);
 
-            // Si se proporcionó un certificado, re-firmar el XML
-            if (certPath && (certPassword || windowsCertSerial)) {
-                const signer = new FacturaeSigner();
-                let cert, privateKey;
-                if (certPath === 'windows') {
-                    cert = await signer.loadCertificate('windows', windowsCertSerial);
-                    privateKey = null;
-                } else {
-                    cert = await signer.loadCertificate(certPath);
-                    privateKey = await signer.loadPrivateKey(certPath, certPassword);
+            // Si se seleccionó certificado de Windows, abrir AutoFirma GUI
+            if (certPath === 'windows') {
+                try {
+                    // Intentar diferentes rutas posibles de AutoFirma
+                    const posiblesRutas = [
+                        'C:\\Program Files\\AutoFirma\\AutoFirma.exe',
+                        'C:\\Program Files (x86)\\AutoFirma\\AutoFirma.exe',
+                        'C:\\Program Files\\AutoFirma\\AutoFirma\\AutoFirma.exe',
+                        'C:\\Program Files (x86)\\AutoFirma\\AutoFirma\\AutoFirma.exe'
+                    ];
+
+                    let autofirmaPath = null;
+                    for (const ruta of posiblesRutas) {
+                        if (fs.existsSync(ruta)) {
+                            autofirmaPath = ruta;
+                            console.log('AutoFirma encontrado en:', ruta);
+                            break;
+                        }
+                    }
+
+                    if (!autofirmaPath) {
+                        throw new Error('No se encontró AutoFirma en las rutas habituales');
+                    }
+
+                    // Enviar el archivo al proceso principal para mostrarlo
+                    const mainWindow = BrowserWindow.getAllWindows()[0];
+                    mainWindow.webContents.send('show-file-preview', {
+                        filePath: outputPath,
+                        fileName: nuevoNombre
+                    });
+
+                    // Esperar un momento para asegurar que la vista previa se muestra
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                    // Comprobar si AutoFirma ya está abierto
+                    const isAutoFirmaRunning = () => {
+                        try {
+                            const { execSync } = require('child_process');
+                            const output = execSync('tasklist', { encoding: 'utf8' });
+                            return output.toLowerCase().includes('autofirma.exe');
+                        } catch (e) {
+                            return false;
+                        }
+                    };
+
+                    if (!isAutoFirmaRunning()) {
+                        // Abrir AutoFirma usando spawn
+                        const { spawn } = require('child_process');
+                        console.log('Abriendo AutoFirma...');
+                        const autofirmaProcess = spawn(autofirmaPath, [], {
+                            detached: true,
+                            stdio: 'ignore'
+                        });
+                        autofirmaProcess.unref();
+                    } else {
+                        console.log('AutoFirma ya está abierto, no se vuelve a lanzar.');
+                    }
+
+                    return { 
+                        success: true, 
+                        newFileName: nuevoNombre,
+                        outputPath: outputPath,
+                        autofirmaGui: true
+                    };
+                } catch (error) {
+                    console.error('Error al abrir AutoFirma:', error);
+                    throw new Error(`Error al abrir AutoFirma: ${error.message}`);
                 }
-                const xmlFirmado = await signer.signXML(xmlModificado, cert, privateKey);
-                fs.writeFileSync(outputPath, xmlFirmado);
-            } else {
-                fs.writeFileSync(outputPath, xmlModificado);
             }
 
+            // Si no es certificado de Windows, solo devolver el XML modificado
             return { 
                 success: true, 
                 newFileName: nuevoNombre,
@@ -184,5 +255,17 @@ ipcMain.handle('get-windows-certificates', async () => {
     } catch (error) {
         console.error('Error al ejecutar certutil:', error);
         return [];
+    }
+});
+
+// Manejar la apertura de la ubicación del archivo
+ipcMain.handle('open-file-location', async (event, filePath) => {
+    try {
+        const { shell } = require('electron');
+        const path = require('path');
+        const folderPath = path.dirname(filePath);
+        await shell.openPath(folderPath);
+    } catch (error) {
+        console.error('Error al abrir la ubicación del archivo:', error);
     }
 }); 

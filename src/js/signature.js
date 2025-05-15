@@ -4,8 +4,64 @@ const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
 const util = require('util');
-const { app } = require('electron');
+const { app, ipcMain, dialog } = require('electron');
 const execPromise = util.promisify(exec);
+
+const configPath = path.join(app.getPath('userData'), 'config.json');
+
+function saveAutoFirmaPath(ruta) {
+    fs.writeFileSync(configPath, JSON.stringify({ autofirmaPath: ruta }, null, 2));
+}
+
+function loadAutoFirmaPath() {
+    if (fs.existsSync(configPath)) {
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        return config.autofirmaPath;
+    }
+    return null;
+}
+
+async function askUserForAutoFirmaPath() {
+    const result = await dialog.showOpenDialog({
+        title: 'Selecciona AutoFirma.exe',
+        properties: ['openFile'],
+        filters: [{ name: 'AutoFirma', extensions: ['exe'] }]
+    });
+    if (!result.canceled && result.filePaths.length > 0) {
+        return result.filePaths[0];
+    }
+    throw new Error('No se seleccionó AutoFirma.exe');
+}
+
+async function getAutoFirmaPath() {
+    // 1. Intenta cargar la ruta guardada
+    const rutaGuardada = loadAutoFirmaPath();
+    if (rutaGuardada && fs.existsSync(rutaGuardada)) {
+        return rutaGuardada;
+    }
+    // 2. Busca en las rutas habituales
+    const posiblesRutas = [
+        'C:\\Program Files\\AutoFirma\\AutoFirma.exe',
+        'C:\\Archivos de programa\\AutoFirma\\AutoFirma.exe',
+        'C:\\Program Files (x86)\\AutoFirma\\AutoFirma.exe'
+    ];
+    for (const ruta of posiblesRutas) {
+        if (fs.existsSync(ruta)) {
+            return ruta;
+        }
+    }
+    // 3. Pide al usuario que seleccione la ruta
+    try {
+        const userPath = await askUserForAutoFirmaPath();
+        if (userPath && fs.existsSync(userPath)) {
+            saveAutoFirmaPath(userPath);
+            return userPath;
+        }
+    } catch (e) {
+        throw new Error('No se seleccionó AutoFirma.exe');
+    }
+    throw new Error('No se encontró AutoFirma en las rutas habituales ni se seleccionó manualmente. Por favor, instálala desde https://firmaelectronica.gob.es/Home/Descargas.html.');
+}
 
 class FacturaeSigner {
     constructor() {
@@ -145,60 +201,45 @@ class FacturaeSigner {
     async signXML(xmlContent, cert, privateKey) {
         try {
             // Parsear el XML
-            const xmlObj = this.parser.parse(xmlContent);
+            let xmlObj = this.parser.parse(xmlContent);
             
             // Eliminar la firma existente si existe
             if (xmlObj['ds:Signature']) {
                 delete xmlObj['ds:Signature'];
             }
+            // Además, eliminar cualquier bloque <ds:Signature>...</ds:Signature> por si acaso (limpieza extra)
+            let xmlString = this.builder.build(xmlObj);
+            xmlString = xmlString.replace(/<ds:Signature[\s\S]*?<\/ds:Signature>/g, '');
 
-            // Si es un certificado de Windows
+            // Si es un certificado de Windows, abrir AutoFirma GUI para que el usuario firme manualmente
             if (cert.publicKey.toString().startsWith('Windows Certificate Store:')) {
-                console.log('Usando certificado de Windows para firmar...');
-                
-                // Crear un archivo temporal con el XML
+                console.log('Abriendo AutoFirma GUI para que el usuario firme manualmente...');
                 const tempDir = path.join(app.getPath('temp'), 'facturae-xml');
                 if (!fs.existsSync(tempDir)) {
                     fs.mkdirSync(tempDir);
                 }
-                
-                const tempXmlPath = path.join(tempDir, `temp_${Date.now()}.xml`);
-                fs.writeFileSync(tempXmlPath, xmlContent);
-                
-                // Extraer el hash del certificado
-                const certHash = cert.publicKey.toString().split(':')[1].trim();
-                console.log('Usando certificado con hash:', certHash);
-                
-                // Firmar usando certutil
-                const { stdout: signStdout, stderr: signStderr } = await execPromise(
-                    `certutil -user -sign "${certHash}" "${tempXmlPath}"`
-                );
-                
-                if (signStderr) {
-                    console.error('Error al firmar:', signStderr);
-                    throw new Error('Error al firmar el XML con certutil');
+                const tempInputPath = path.join(tempDir, `facturae_input_${Date.now()}.xml`);
+                fs.writeFileSync(tempInputPath, xmlString);
+
+                // Detectar la ruta de AutoFirma automáticamente o pedirla al usuario
+                let autofirmaPath;
+                try {
+                    autofirmaPath = await getAutoFirmaPath();
+                } catch (rutaError) {
+                    throw new Error(rutaError.message);
                 }
-                
-                console.log('Salida de firma:', signStdout);
-                
-                // Leer el XML firmado
-                const signedXml = fs.readFileSync(tempXmlPath, 'utf8');
-                
-                // Limpiar el archivo temporal
-                fs.unlinkSync(tempXmlPath);
-                
-                return signedXml;
+                const command = `"${autofirmaPath}" "${tempInputPath}"`;
+                console.log('Abriendo AutoFirma GUI:', command);
+                const { exec } = require('child_process');
+                exec(command);
+                // Devuelve un mensaje especial para que la app muestre instrucciones al usuario
+                return '__AUTOFIRMA_GUI__:' + tempInputPath;
             }
 
-            // Crear la firma XAdES
+            // Crear la firma XAdES con .p12/.pfx
             const signature = this.createXAdESSignature(xmlObj, cert, privateKey);
-            
-            // Añadir la firma al XML
             xmlObj['ds:Signature'] = signature;
-
-            // Convertir de nuevo a XML
             const signedXML = this.builder.build(xmlObj);
-            
             return signedXML;
         } catch (error) {
             throw new Error(`Error al firmar el XML: ${error.message}`);
@@ -313,4 +354,22 @@ class FacturaeSigner {
     }
 }
 
-module.exports = FacturaeSigner; 
+// Handler IPC para forzar la selección de ruta de AutoFirma desde el botón de ajustes
+ipcMain.handle('force-select-autofirma', async () => {
+    try {
+        const result = await askUserForAutoFirmaPath();
+        if (result && fs.existsSync(result)) {
+            saveAutoFirmaPath(result);
+            return { success: true, path: result };
+        }
+        return { success: false };
+    } catch (e) {
+        return { success: false };
+    }
+});
+
+// Exportar la clase y la función
+module.exports = {
+    FacturaeSigner,
+    getAutoFirmaPath
+}; 

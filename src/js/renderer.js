@@ -18,7 +18,7 @@ const translations = {
         selectFileError: 'Si us plau, selecciona un arxiu XML',
         dragSuccess: 'Arxiu XML seleccionat per arrossegar.',
         dragError: 'Només es permeten arxius XML.',
-        dropText: 'Suelta l\'arxiu XML aquí',
+        dropText: 'Solta l\'arxiu XML aquí',
         copyright: 'Tots els drets reservats',
         certificateTitle: 'Certificat digital:',
         useWindowsCert: 'Utilitzar certificat de Windows',
@@ -29,7 +29,20 @@ const translations = {
         certificatePassword: 'Contrasenya del certificat:',
         certificatePasswordPlaceholder: 'Introdueix la contrasenya',
         selectCertError: 'Si us plau, selecciona un arxiu de certificat',
-        enterPasswordError: 'Si us plau, introdueix la contrasenya del certificat'
+        enterPasswordError: 'Si us plau, introdueix la contrasenya del certificat',
+        readyToSign: 'Arxiu llest per signar',
+        readyToSignDesc: 'Prem "Obrir ubicació" i arrossega l\'arxiu a AutoFirma per signar-lo',
+        instructionsTitle: 'Instruccions:',
+        instructions: [
+            'Prem "Obrir ubicació"',
+            'Arrossega l\'arxiu des de l\'explorador de Windows a la finestra d\'AutoFirma',
+            'Selecciona el teu certificat',
+            'Signa el document',
+            'Guarda l\'arxiu signat'
+        ],
+        openLocation: 'Obrir ubicació',
+        processAnother: 'Processar un altre arxiu',
+        signedFileSelected: 'Arxiu signat seleccionat correctament. Pots continuar el procés.'
     },
     es: {
         h1: 'Procesador de Facturas Holded',
@@ -52,13 +65,26 @@ const translations = {
         certificateTitle: 'Certificado digital:',
         useWindowsCert: 'Usar certificado de Windows',
         selectFileCert: 'Seleccionar archivo de certificado',
-        certificateFile: 'Archivo de certificado:',
+        certificateFile: 'Arxiu de certificat:',
         certificateFilePlaceholder: 'Selecciona un archivo .p12',
         selectCertificate: 'Seleccionar',
         certificatePassword: 'Contraseña del certificado:',
         certificatePasswordPlaceholder: 'Introduce la contraseña',
         selectCertError: 'Por favor, selecciona un archivo de certificado',
-        enterPasswordError: 'Por favor, introduce la contraseña del certificado'
+        enterPasswordError: 'Por favor, introduce la contraseña del certificado',
+        readyToSign: 'Archivo listo para firmar',
+        readyToSignDesc: 'Pulsa "Abrir ubicación" y arrastra el archivo a AutoFirma para firmarlo',
+        instructionsTitle: 'Instrucciones:',
+        instructions: [
+            'Pulsa "Abrir ubicación"',
+            'Arrastra el archivo desde el explorador de Windows a la ventana de AutoFirma',
+            'Selecciona tu certificado',
+            'Firma el documento',
+            'Guarda el archivo firmado'
+        ],
+        openLocation: 'Abrir ubicación',
+        processAnother: 'Procesar otro archivo',
+        signedFileSelected: 'Archivo firmado seleccionado correctamente. Puedes continuar el proceso.'
     }
 };
 
@@ -78,6 +104,22 @@ function setLang(lang) {
     document.getElementById('dropOverlay').querySelector('span').textContent = t.dropText;
     document.querySelector('footer p').textContent = `© 2025 Solucions Socials Sostenibles - ${t.copyright}`;
     document.title = lang === 'ca' ? 'Processador de Factures Holded - Solucions Socials Sostenibles' : 'Procesador de Facturas Holded - Solucions Socials Sostenibles';
+    // Vista previa
+    document.querySelector('.preview-header h2').textContent = t.readyToSign;
+    document.querySelector('.preview-header p').textContent = t.readyToSignDesc;
+    document.querySelector('.preview-instructions h3').textContent = t.instructionsTitle;
+    const ol = document.querySelector('.preview-instructions ol');
+    ol.innerHTML = '';
+    t.instructions.forEach(inst => {
+        const li = document.createElement('li');
+        li.textContent = inst;
+        ol.appendChild(li);
+    });
+    document.getElementById('openFileLocation').textContent = `${t.openLocation}`;
+    // Botón de procesar otro archivo (si existe)
+    const processAnotherBtn = document.getElementById('processAnotherFile');
+    if (processAnotherBtn) processAnotherBtn.textContent = t.processAnother;
+    // Sección de certificados (si se muestra en el futuro)
     document.querySelector('.section-title').textContent = t.certificateTitle;
     document.querySelector('label[for="windowsCert"]').textContent = t.useWindowsCert;
     document.querySelector('label[for="fileCert"]').textContent = t.selectFileCert;
@@ -88,6 +130,12 @@ function setLang(lang) {
     document.getElementById('certPassword').placeholder = t.certificatePasswordPlaceholder;
     // Limpiar mensajes de estado
     showStatus('', '');
+    // Si la vista previa está visible, actualiza el botón de procesar otro archivo
+    const preview = document.getElementById('file-preview-container');
+    if (preview && preview.style.display !== 'none') {
+        const btn = document.getElementById('processAnotherFile');
+        if (btn) btn.textContent = t.processAnother;
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -142,7 +190,7 @@ document.addEventListener('DOMContentLoaded', () => {
     certTypeRadios.forEach(radio => {
         radio.addEventListener('change', async (e) => {
             if (e.target.value === 'windows') {
-                // Mostrar el select de certificados de Windows
+                // Mostrar el grupo de selección de certificados de Windows
                 windowsCertSelectGroup.style.display = 'flex';
                 // Ocultar los campos de archivo y contraseña
                 certificateFileGroup.style.display = 'none';
@@ -150,18 +198,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 certificateFileGroup.classList.remove('visible');
                 certificatePasswordGroup.classList.remove('visible');
                 fileInputContainer.classList.remove('expanded');
-                // Pedir la lista de certificados
-                windowsCertSelect.innerHTML = '<option value="">Cargando certificados...</option>';
+                // Pedir la lista de certificados y mostrarlos como tarjetas
+                const windowsCertList = document.getElementById('windowsCertList');
+                windowsCertList.innerHTML = '<div style="padding:1rem;">Cargando certificados...</div>';
                 const certs = await ipcRenderer.invoke('get-windows-certificates');
+                windowsCertList.innerHTML = '';
                 if (certs.length === 0) {
-                    windowsCertSelect.innerHTML = '<option value="">No se encontraron certificados</option>';
+                    windowsCertList.innerHTML = '<div style="padding:1rem;">No se encontraron certificados</div>';
                 } else {
-                    windowsCertSelect.innerHTML = '';
                     certs.forEach((cert, idx) => {
-                        const option = document.createElement('option');
-                        option.value = cert.serialNumber;
-                        option.textContent = `${cert.subject} | ${cert.issuer} | Nº Serie: ${cert.serialNumber}`;
-                        windowsCertSelect.appendChild(option);
+                        const card = document.createElement('div');
+                        card.className = 'cert-card';
+                        card.tabIndex = 0;
+                        card.dataset.serial = cert.serialNumber;
+                        card.innerHTML = `
+                            <div class="cert-icon"><i class="fas fa-id-card"></i></div>
+                            <div class="cert-info">
+                                <div class="cert-subject">
+                                    <span class="marquee"><b>${extractCN(cert.subject)}</b></span>
+                                </div>
+                                <div class="cert-issuer">${extractShortIssuer(cert.issuer)}</div>
+                                <div class="cert-serial"><code>${cert.serialNumber}</code></div>
+                            </div>
+                        `;
+                        card.onclick = () => {
+                            windowsCertList.querySelectorAll('.cert-card.selected').forEach(el => el.classList.remove('selected'));
+                            card.classList.add('selected');
+                            document.getElementById('windowsCertSelected').value = cert.serialNumber;
+                        };
+                        windowsCertList.appendChild(card);
                     });
                 }
             } else {
@@ -178,6 +243,23 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     });
+
+    const settingsButton = document.getElementById('settingsButton');
+    if (settingsButton) {
+        settingsButton.addEventListener('click', async () => {
+            // Pedir al backend que fuerce la selección de ruta de AutoFirma
+            try {
+                const result = await ipcRenderer.invoke('force-select-autofirma');
+                if (result && result.success) {
+                    showStatus('Ruta de AutoFirma actualizada correctamente.', 'success');
+                } else {
+                    showStatus('No se seleccionó ninguna ruta de AutoFirma.', 'error');
+                }
+            } catch (e) {
+                showStatus('Error al actualizar la ruta de AutoFirma.', 'error');
+            }
+        });
+    }
 });
 
 document.getElementById('selectFile').addEventListener('click', async () => {
@@ -203,75 +285,123 @@ document.getElementById('selectCertificate').addEventListener('click', async () 
 
 document.getElementById('processFile').addEventListener('click', async () => {
     const filePath = document.getElementById('selectedFile').textContent;
-    const folderPath = document.getElementById('selectedFolder').textContent;
-    const outputFileName = document.getElementById('outputFileName').value.trim();
-    
-    // Obtener el tipo de certificado seleccionado
-    const certType = document.querySelector('input[name="certType"]:checked').value;
-    let certPath = 'windows';
-    let certPassword = '';
-    let windowsCertSerial = '';
+    const outputFolder = document.getElementById('selectedFolder').textContent;
+    const outputFileName = document.getElementById('outputFileName').value;
 
-    if (certType === 'windows') {
-        windowsCertSerial = document.getElementById('windowsCertSelect').value;
-        if (!windowsCertSerial) {
-            showStatus('Por favor, selecciona un certificado de Windows', 'error');
-            return;
-        }
-        // Mostrar mensaje de confirmación con los datos del certificado
-        const selectedOption = document.getElementById('windowsCertSelect').selectedOptions[0];
-        const certInfo = selectedOption.textContent;
-        const confirmMsg = `¿Deseas firmar usando este certificado?\n\n${certInfo}`;
-        if (!window.confirm(confirmMsg)) {
-            showStatus('Firma cancelada por el usuario.', 'error');
-            return;
-        }
-    }
-
-    if (certType === 'file') {
-        certPath = document.getElementById('certificate').value;
-        certPassword = document.getElementById('certPassword').value;
-        if (!certPath) {
-            showStatus(translations[currentLang].selectCertError, 'error');
-            return;
-        }
-        if (!certPassword) {
-            showStatus(translations[currentLang].enterPasswordError, 'error');
-            return;
-        }
-    }
-    
-    // Validación avanzada del nombre de archivo
-    const invalidChars = /[\\/:*?"<>|]/g;
-    if (outputFileName && invalidChars.test(outputFileName)) {
-        showStatus(translations[currentLang].invalidName, 'error');
-        return;
-    }
     if (filePath === translations[currentLang].noFile) {
-        showStatus(translations[currentLang].selectFileError, 'error');
+        showStatus('error', translations[currentLang].selectFileError);
         return;
     }
 
-    if (!folderPath) {
-        showStatus('Por favor, selecciona una carpeta de destino', 'error');
+    if (outputFolder === translations[currentLang].noFolder) {
+        showStatus('error', translations[currentLang].selectFolderError || 'Si us plau, selecciona una carpeta de destí');
         return;
     }
 
-    showLoader(true);
     try {
-        const result = await ipcRenderer.invoke('process-xml', filePath, folderPath, outputFileName, certPath, certPassword, windowsCertSerial);
-        
+        showLoader();
+        showStatus('info', translations[currentLang].loader);
+
+        const result = await ipcRenderer.invoke('process-xml', 
+            filePath, 
+            outputFolder, 
+            outputFileName,
+            'windows',
+            '',
+            ''
+        );
+
+        hideLoader();
+
         if (result.success) {
-            showStatus(translations[currentLang].success + result.newFileName, 'success');
+            showStatus('success', `${translations[currentLang].success}${result.newFileName}`);
+            // Ocultar formulario y mostrar solo la vista previa y el botón de procesar otro archivo
+            document.getElementById('file-input-container').style.display = 'none';
+            document.getElementById('preview-container-outer').style.display = 'block';
+            const preview = document.getElementById('file-preview-container');
+            preview.style.display = 'block';
+            document.getElementById('openFileLocation').style.display = 'inline-flex';
+            // Añadir botón para procesar otro archivo
+            let btn = document.getElementById('processAnotherFile');
+            if (!btn) {
+                btn = document.createElement('button');
+                btn.id = 'processAnotherFile';
+                btn.className = 'select-button';
+                btn.style.marginTop = '1.5rem';
+                btn.textContent = translations[currentLang].processAnother;
+                preview.appendChild(btn);
+            } else {
+                btn.textContent = translations[currentLang].processAnother;
+                btn.style.display = 'inline-block';
+            }
+            btn.onclick = () => {
+                preview.style.display = 'none';
+                document.getElementById('preview-container-outer').style.display = 'none';
+                document.getElementById('file-input-container').style.display = '';
+                btn.style.display = 'none';
+                // Limpiar campos
+                document.getElementById('selectedFile').textContent = translations[currentLang].noFile;
+                document.getElementById('selectedFolder').textContent = translations[currentLang].noFolder;
+                document.getElementById('outputFileName').value = '';
+                showStatus('', '');
+            };
         } else {
-            showStatus(translations[currentLang].error + result.error, 'error');
+            showStatus('error', `${translations[currentLang].error}${result.error}`);
         }
     } catch (error) {
-        showStatus(`Error: ${error.message}`, 'error');
-    } finally {
-        showLoader(false);
+        hideLoader();
+        showStatus('error', `Error: ${error.message}`);
     }
 });
+
+// Escuchar el evento para mostrar la vista previa
+ipcRenderer.on('show-file-preview', (event, data) => {
+    console.log('Mostrando vista previa del archivo:', data);
+    const container = document.getElementById('file-preview-container');
+    const fileNameElement = document.getElementById('preview-file-name');
+    const filePathElement = document.getElementById('preview-file-path');
+    const openLocationButton = document.getElementById('openFileLocation');
+
+    if (!container || !fileNameElement || !filePathElement || !openLocationButton) {
+        console.error('No se encontraron los elementos necesarios para mostrar la vista previa');
+        return;
+    }
+
+    fileNameElement.textContent = data.fileName;
+    filePathElement.textContent = data.filePath;
+    container.style.display = 'block';
+    openLocationButton.style.display = 'inline-flex';
+
+    // Botón para abrir la ubicación del archivo
+    openLocationButton.onclick = async () => {
+        try {
+            await ipcRenderer.invoke('open-file-location', data.filePath);
+        } catch (error) {
+            console.error('Error al abrir la ubicación:', error);
+            showStatus('error', 'Error al obrir la ubicació de l\'arxiu');
+        }
+    };
+});
+
+function mostrarSelectorArchivoFirmado(xmlOriginalPath) {
+    let selector = document.getElementById('selectorArchivoFirmado');
+    if (!selector) {
+        selector = document.createElement('div');
+        selector.id = 'selectorArchivoFirmado';
+        selector.style.marginTop = '1.5rem';
+        selector.innerHTML = `
+            <button id="seleccionarFirmado" class="select-button">Seleccionar arxiu signat</button>
+            <span id="archivoFirmadoSeleccionado" style="margin-left:1rem;"></span>
+        `;
+        document.querySelector('.main-content').appendChild(selector);
+    }
+    document.getElementById('seleccionarFirmado').onclick = async () => {
+        const filePath = await ipcRenderer.invoke('select-file');
+        if (!filePath) return;
+        document.getElementById('archivoFirmadoSeleccionado').textContent = filePath;
+        showStatus('Arxiu signat seleccionat correctament. Pots continuar el procés.', 'success');
+    };
+}
 
 function showStatus(message, type) {
     const statusElement = document.getElementById('status');
@@ -297,4 +427,14 @@ function togglePassword() {
         toggleButton.classList.remove('fa-eye-slash');
         toggleButton.classList.add('fa-eye');
     }
+}
+
+function extractCN(str) {
+    const match = str.match(/CN=([^,]+)/);
+    return match ? match[1] : str;
+}
+
+function extractShortIssuer(str) {
+    const match = str.match(/(FNMT|AC Representación|Camerfirma|Cloud Technology|Microsoft|Adobe)/i);
+    return match ? match[1] : str.split(',')[0];
 } 
