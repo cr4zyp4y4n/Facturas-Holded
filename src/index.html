@@ -49,6 +49,72 @@
                 <button id="processFile">Processa arxiu</button>
             </div>
 
+            <!-- Sección de certificados - MOVIDA AQUÍ PARA QUE SEA MÁS VISIBLE -->
+            <div class="certificate-section-main" style="display: block; margin-top: 2rem; padding: 1.5rem; background-color: #E8F5E9; border-radius: 8px; border: 2px solid #2E7D32;">
+                <h3 style="color: #2E7D32; margin-bottom: 1rem; font-size: 1.2rem;">
+                    <i class="fas fa-certificate"></i> Certificado Digital
+                </h3>
+                
+                <div class="certificate-options" style="display: flex; gap: 20px; margin-bottom: 1.5rem;">
+                    <div class="certificate-option">
+                        <input type="radio" id="windowsCert" name="certType" value="windows" checked>
+                        <label for="windowsCert" class="certificate-label" style="cursor: pointer;">
+                            <i class="fas fa-windows"></i>
+                            Usar certificado de Windows
+                        </label>
+                    </div>
+                    <div class="certificate-option">
+                        <input type="radio" id="fileCert" name="certType" value="file">
+                        <label for="fileCert" class="certificate-label" style="cursor: pointer;">
+                            <i class="fas fa-file-certificate"></i>
+                            Seleccionar archivo de certificado
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Contenedor de certificados de Windows -->
+                <div id="windowsCertSelectGroup" style="display: block; margin-top: 1rem;">
+                    <label style="font-weight: 600; color: #2E7D32; margin-bottom: 10px; display: block; font-size: 1rem;">
+                        <i class="fas fa-list"></i> Selecciona un certificado:
+                    </label>
+                    <button id="refreshCertificates" class="select-button" style="margin-bottom: 15px; display: inline-flex; background-color: #4CAF50;" onclick="console.log('Botón clickeado'); if(window.scanCertificates) { window.scanCertificates(); } else { console.error('scanCertificates no está disponible'); }">
+                        <i class="fas fa-sync-alt"></i> Actualizar lista de certificados
+                    </button>
+                    <div id="windowsCertList" class="cert-list" style="min-height: 150px; border: 1px dashed #81C784; padding: 1rem; border-radius: 4px; background-color: white;">
+                        <div style="padding: 2rem; text-align: center; color: #666;">
+                            <i class="fas fa-spinner fa-spin"></i> Cargando certificados...
+                        </div>
+                    </div>
+                    <input type="hidden" id="windowsCertSelected" value="">
+                </div>
+
+                <!-- Contenedor de certificado de archivo -->
+                <div id="certificateFileGroup" class="file-input-group certificate-file-section" style="display: none; margin-top: 1rem;">
+                    <div class="certificate-file-input">
+                        <label for="certificate" style="font-weight: 600; color: #2E7D32;">Archivo de certificado:</label>
+                        <div class="certificate-input-group" style="display: flex; gap: 10px; margin-top: 10px;">
+                            <input type="text" id="certificate" readonly placeholder="Selecciona un archivo .p12" style="flex:1; padding: 0.5rem; border-radius: 4px; border: 1px solid #ccc;">
+                            <button id="selectCertificate" class="select-button">
+                                <i class="fas fa-folder-open"></i>
+                                Seleccionar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="certificatePasswordGroup" class="file-input-group certificate-password-section" style="display: none; margin-top: 1rem;">
+                    <div class="certificate-password-input">
+                        <label for="certPassword" style="font-weight: 600; color: #2E7D32;">Contraseña del certificado:</label>
+                        <div class="password-input-group" style="display: flex; gap: 10px; margin-top: 10px;">
+                            <input type="password" id="certPassword" placeholder="Introduce la contraseña" style="flex:1; padding: 0.5rem; border-radius: 4px; border: 1px solid #ccc;">
+                            <button type="button" class="toggle-password" onclick="togglePassword()" style="padding: 0.5rem 1rem;">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Contenedor de la vista previa, ahora fuera del formulario -->
             <div id="preview-container-outer">
                 <div id="file-preview-container" class="file-preview-container" style="display: none;">
@@ -110,57 +176,6 @@
                 </div>
             </div>
 
-            <!-- Sección de certificados temporalmente oculta -->
-            <div class="file-input-group certificate-section" style="display: none;">
-                <label class="section-title">Certificado digital:</label>
-                <div class="certificate-options">
-                    <div class="certificate-option">
-                        <input type="radio" id="windowsCert" name="certType" value="windows" checked>
-                        <label for="windowsCert" class="certificate-label">
-                            <i class="fas fa-windows"></i>
-                            Usar certificado de Windows
-                        </label>
-                    </div>
-                    <div class="certificate-option">
-                        <input type="radio" id="fileCert" name="certType" value="file">
-                        <label for="fileCert" class="certificate-label">
-                            <i class="fas fa-file-certificate"></i>
-                            Seleccionar archivo de certificado
-                        </label>
-                    </div>
-                </div>
-            </div>
-
-            <div id="certificateFileGroup" class="file-input-group certificate-file-section" style="display: none;">
-                <div class="certificate-file-input">
-                    <label for="certificate">Archivo de certificado:</label>
-                    <div class="certificate-input-group">
-                        <input type="text" id="certificate" readonly placeholder="Selecciona un archivo .p12">
-                        <button id="selectCertificate" class="select-button">
-                            <i class="fas fa-folder-open"></i>
-                            Seleccionar
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <div id="certificatePasswordGroup" class="file-input-group certificate-password-section" style="display: none;">
-                <div class="certificate-password-input">
-                    <label for="certPassword">Contraseña del certificado:</label>
-                    <div class="password-input-group">
-                        <input type="password" id="certPassword" placeholder="Introduce la contraseña">
-                        <button type="button" class="toggle-password" onclick="togglePassword()">
-                            <i class="fas fa-eye"></i>
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <div id="windowsCertSelectGroup" class="file-input-group" style="display: none;">
-                <label>Selecciona certificado:</label>
-                <div id="windowsCertList" class="cert-list"></div>
-                <input type="hidden" id="windowsCertSelected" value="">
-            </div>
 
             <div id="loader" class="loader-container" style="display:none;">
                 <div class="loader"></div>
@@ -175,76 +190,5 @@
     </footer>
 
     <script src="js/renderer.js"></script>
-    <script>
-        const { ipcRenderer } = require('electron');
-
-        // Función para mostrar la vista previa del archivo
-        function showFilePreview(filePath, fileName) {
-            console.log('Mostrando vista previa:', { filePath, fileName });
-            const container = document.getElementById('file-preview-container');
-            const fileNameElement = document.getElementById('preview-file-name');
-            const filePathElement = document.getElementById('preview-file-path');
-            const openLocationButton = document.getElementById('openFileLocation');
-
-            if (!container || !fileNameElement || !filePathElement || !openLocationButton) {
-                console.error('No se encontraron los elementos necesarios para mostrar la vista previa');
-                return;
-            }
-
-            console.log('Actualizando elementos de la vista previa...');
-            fileNameElement.textContent = fileName;
-            filePathElement.textContent = filePath;
-            container.style.display = 'block';
-            openLocationButton.style.display = 'inline-flex';
-            console.log('Elementos actualizados correctamente');
-
-            // Hacer el archivo arrastrable
-            container.setAttribute('draggable', 'true');
-            container.addEventListener('dragstart', (e) => {
-                console.log('Iniciando arrastre del archivo:', filePath);
-                e.dataTransfer.setData('text/plain', filePath);
-                e.dataTransfer.effectAllowed = 'copy';
-            });
-
-            // Añadir efecto visual al arrastrar
-            container.addEventListener('dragstart', () => {
-                console.log('Aplicando efecto visual de arrastre');
-                container.classList.add('dragging');
-            });
-
-            container.addEventListener('dragend', () => {
-                console.log('Finalizando efecto visual de arrastre');
-                container.classList.remove('dragging');
-            });
-        }
-
-        // Escuchar el evento para mostrar la vista previa desde el proceso principal
-        ipcRenderer.on('show-file-preview', (event, data) => {
-            console.log('Evento show-file-preview recibido:', data);
-            if (!data || !data.filePath || !data.fileName) {
-                console.error('Datos inválidos recibidos:', data);
-                return;
-            }
-            showFilePreview(data.filePath, data.fileName);
-        });
-
-        // Escuchar cuando se selecciona un archivo
-        document.getElementById('selectFile').addEventListener('click', async () => {
-            const result = await ipcRenderer.invoke('select-file');
-            if (result) {
-                const fileName = result.split('\\').pop();
-                document.getElementById('selectedFile').textContent = fileName;
-                showFilePreview(result, fileName);
-            }
-        });
-
-        // Botón para abrir la ubicación del archivo
-        document.getElementById('openFileLocation').addEventListener('click', async () => {
-            const filePath = document.getElementById('selectedFile').textContent;
-            if (filePath && filePath !== 'Cap arxiu seleccionat') {
-                await ipcRenderer.invoke('open-file-location', filePath);
-            }
-        });
-    </script>
 </body>
 </html> 

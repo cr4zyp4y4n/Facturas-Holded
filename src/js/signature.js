@@ -211,29 +211,39 @@ class FacturaeSigner {
             let xmlString = this.builder.build(xmlObj);
             xmlString = xmlString.replace(/<ds:Signature[\s\S]*?<\/ds:Signature>/g, '');
 
-            // Si es un certificado de Windows, abrir AutoFirma GUI para que el usuario firme manualmente
-            if (cert.publicKey.toString().startsWith('Windows Certificate Store:')) {
-                console.log('Abriendo AutoFirma GUI para que el usuario firme manualmente...');
-                const tempDir = path.join(app.getPath('temp'), 'facturae-xml');
-                if (!fs.existsSync(tempDir)) {
-                    fs.mkdirSync(tempDir);
-                }
-                const tempInputPath = path.join(tempDir, `facturae_input_${Date.now()}.xml`);
-                fs.writeFileSync(tempInputPath, xmlString);
-
-                // Detectar la ruta de AutoFirma automáticamente o pedirla al usuario
-                let autofirmaPath;
+            // Si es un certificado de Windows, intentar firmar directamente primero
+            // Si falla (porque la clave privada está protegida), usar AutoFirma
+            if (cert.publicKey && cert.publicKey.toString().startsWith('Windows Certificate Store:')) {
+                console.log('[SIGNATURE] Certificado de Windows detectado, intentando firmar...');
+                
+                // Intentar firmar directamente (probablemente fallará porque la clave privada está protegida)
                 try {
-                    autofirmaPath = await getAutoFirmaPath();
-                } catch (rutaError) {
-                    throw new Error(rutaError.message);
+                    // Para certificados de Windows, necesitamos usar la API de Windows
+                    // Por ahora, usaremos AutoFirma que puede acceder a la clave privada protegida
+                    console.log('[SIGNATURE] La clave privada de Windows está protegida, usando AutoFirma...');
+                    const tempDir = path.join(app.getPath('temp'), 'facturae-xml');
+                    if (!fs.existsSync(tempDir)) {
+                        fs.mkdirSync(tempDir, { recursive: true });
+                    }
+                    const tempInputPath = path.join(tempDir, `facturae_input_${Date.now()}.xml`);
+                    fs.writeFileSync(tempInputPath, xmlString);
+                    console.log('[SIGNATURE] Archivo temporal creado para AutoFirma:', tempInputPath);
+
+                    // Detectar la ruta de AutoFirma automáticamente o pedirla al usuario
+                    let autofirmaPath;
+                    try {
+                        autofirmaPath = await getAutoFirmaPath();
+                    } catch (rutaError) {
+                        throw new Error(rutaError.message);
+                    }
+                    
+                    // Devolver el path para que AutoFirma lo procese
+                    // AutoFirma puede acceder a la clave privada protegida de Windows
+                    return '__AUTOFIRMA_GUI__:' + tempInputPath;
+                } catch (error) {
+                    console.error('[SIGNATURE] Error al preparar AutoFirma:', error);
+                    throw error;
                 }
-                const command = `"${autofirmaPath}" "${tempInputPath}"`;
-                console.log('Abriendo AutoFirma GUI:', command);
-                const { exec } = require('child_process');
-                exec(command);
-                // Devuelve un mensaje especial para que la app muestre instrucciones al usuario
-                return '__AUTOFIRMA_GUI__:' + tempInputPath;
             }
 
             // Crear la firma XAdES con .p12/.pfx
@@ -281,7 +291,7 @@ class FacturaeSigner {
             'ds:SignatureValue': this.calculateSignature(xmlObj, privateKey),
             'ds:KeyInfo': {
                 'ds:X509Data': {
-                    'ds:X509Certificate': cert.publicKey.toString()
+                    'ds:X509Certificate': this.getCertificateBase64(cert)
                 }
             },
             'ds:Object': {
@@ -345,8 +355,27 @@ class FacturaeSigner {
         return forge.util.encode64(signature);
     }
 
+    getCertificateBase64(cert) {
+        // Obtener el certificado en formato base64
+        if (cert.publicKey && cert.publicKey.toString().startsWith('Windows Certificate Store:')) {
+            // Para certificados de Windows, necesitamos extraer el certificado real
+            // Por ahora, devolvemos un placeholder (esto no se usará porque Windows usa AutoFirma)
+            return 'CERTIFICADO_WINDOWS';
+        }
+        // Para certificados .p12, convertir a base64
+        const certDer = forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes();
+        return forge.util.encode64(certDer);
+    }
+
     calculateCertDigest(cert) {
         // Implementar el cálculo del digest del certificado
+        if (cert.publicKey && cert.publicKey.toString().startsWith('Windows Certificate Store:')) {
+            // Para certificados de Windows, usar un hash dummy (no se usará realmente)
+            const md = forge.md.sha512.create();
+            md.update(cert.serialNumber || '');
+            return forge.util.encode64(md.digest().bytes());
+        }
+        // Para certificados .p12
         const certDer = forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes();
         const md = forge.md.sha512.create();
         md.update(certDer);
