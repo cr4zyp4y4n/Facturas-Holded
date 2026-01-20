@@ -49,10 +49,20 @@
                 <button id="processFile">Processa arxiu</button>
             </div>
 
+            <!-- Mensaje informativo sobre certificados -->
+            <div id="certificate-info-message" style="margin-top: 2rem; padding: 1rem; background-color: #E3F2FD; border-left: 4px solid #2196F3; border-radius: 4px;">
+                <p style="margin: 0; color: #1565C0; font-size: 0.95rem;">
+                    <i class="fas fa-info-circle"></i> 
+                    <strong>Nota:</strong> La selección de un certificado digital es <strong>opcional</strong>. 
+                    Si no seleccionas ningún certificado, el archivo se modificará pero no se firmará. 
+                    Puedes firmarlo más tarde con AutoFirma u otra herramienta.
+                </p>
+            </div>
+
             <!-- Sección de certificados - MOVIDA AQUÍ PARA QUE SEA MÁS VISIBLE -->
-            <div class="certificate-section-main" style="display: block; margin-top: 2rem; padding: 1.5rem; background-color: #E8F5E9; border-radius: 8px; border: 2px solid #2E7D32;">
+            <div id="certificate-section-main" class="certificate-section-main" style="display: block; margin-top: 1rem; padding: 1.5rem; background-color: #E8F5E9; border-radius: 8px; border: 2px solid #2E7D32;">
                 <h3 style="color: #2E7D32; margin-bottom: 1rem; font-size: 1.2rem;">
-                    <i class="fas fa-certificate"></i> Certificado Digital
+                    <i class="fas fa-certificate"></i> Certificado Digital (Opcional)
                 </h3>
                 
                 <div class="certificate-options" style="display: flex; gap: 20px; margin-bottom: 1.5rem;">
@@ -116,11 +126,11 @@
             </div>
 
             <!-- Contenedor de la vista previa, ahora fuera del formulario -->
-            <div id="preview-container-outer">
+            <div id="preview-container-outer" style="display: none;">
                 <div id="file-preview-container" class="file-preview-container" style="display: none;">
                     <div class="preview-header">
-                        <h2>Arxiu llest per signar</h2>
-                        <p>Prem "Obrir ubicació" i arrossega l'arxiu a AutoFirma per signar-lo</p>
+                        <h2 id="preview-title">Arxiu llest per signar</h2>
+                        <p id="preview-subtitle">Prem "Obrir ubicació" i arrossega l'arxiu a AutoFirma per signar-lo</p>
                     </div>
                     <div class="preview-content">
                         <div class="file-icon">
@@ -145,34 +155,6 @@
                             <li>Guarda l'arxiu signat</li>
                         </ol>
                     </div>
-            <!-- Ahora la vista previa va aquí, justo debajo del botón de procesar archivo -->
-            <div id="file-preview-container" class="file-preview-container" style="display: none;">
-                <div class="preview-header">
-                    <h2>Arxiu llest per signar</h2>
-                    <p>Prem "Obrir ubicació" i arrossega l'arxiu a AutoFirma per signar-lo</p>
-                </div>
-                <div class="preview-content">
-                    <div class="file-icon">
-                        <i class="fas fa-file-code"></i>
-                    </div>
-                    <div class="file-info">
-                        <span class="file-name" id="preview-file-name"></span>
-                        <span class="file-path" id="preview-file-path"></span>
-                    </div>
-                    <button id="openFileLocation" class="select-button" style="display: none; margin-left: 1rem;">
-                        <i class="fas fa-folder-open"></i>
-                        Obrir ubicació
-                    </button>
-                </div>
-                <div class="preview-instructions">
-                    <h3>Instruccions:</h3>
-                    <ol>
-                        <li>Prem "Obrir ubicació"</li>
-                        <li>Arrossega l'arxiu des de l'explorador de Windows a la finestra d'AutoFirma</li>
-                        <li>Selecciona el teu certificat</li>
-                        <li>Signa el document</li>
-                        <li>Guarda l'arxiu signat</li>
-                    </ol>
                 </div>
             </div>
 

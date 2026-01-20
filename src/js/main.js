@@ -128,18 +128,69 @@ ipcMain.handle('process-xml', async (event, filePath, outputFolder, outputFileNa
                 path.join(outputFolder, nuevoNombre) : 
                 path.join(path.dirname(filePath), nuevoNombre);
             
+            // Asegurar que el directorio de destino existe
+            const outputDir = path.dirname(outputPath);
+            console.log('[MAIN] Directorio de destino:', outputDir);
+            if (!fs.existsSync(outputDir)) {
+                console.log('[MAIN] El directorio no existe, creándolo...');
+                fs.mkdirSync(outputDir, { recursive: true });
+                console.log('[MAIN] Directorio creado correctamente');
+            }
+            
+            // PRIMERO: Guardar el XML procesado (sin firma) en la ubicación final
+            console.log('[MAIN] Guardando XML procesado en:', outputPath);
+            console.log('[MAIN] Tamaño del XML a guardar:', xmlModificado.length, 'caracteres');
+            try {
+                fs.writeFileSync(outputPath, xmlModificado, 'utf8');
+                console.log('[MAIN] Archivo escrito, verificando que existe...');
+                
+                // Verificar que el archivo realmente se guardó
+                if (fs.existsSync(outputPath)) {
+                    const stats = fs.statSync(outputPath);
+                    console.log('[MAIN] ✓ Archivo guardado correctamente');
+                    console.log('[MAIN] ✓ Tamaño del archivo guardado:', stats.size, 'bytes');
+                    console.log('[MAIN] ✓ Ruta completa:', outputPath);
+                } else {
+                    console.error('[MAIN] ✗ ERROR: El archivo NO existe después de escribirlo');
+                    throw new Error('El archivo no se pudo guardar. Verifica los permisos de escritura.');
+                }
+            } catch (writeError) {
+                console.error('[MAIN] ✗ ERROR al escribir el archivo:', writeError);
+                console.error('[MAIN] ✗ Stack:', writeError.stack);
+                throw new Error(`Error al guardar el archivo: ${writeError.message}`);
+            }
+            
             // Si se seleccionó certificado de Windows, intentar firmar directamente
-            if (certPath === 'windows' && windowsCertSerial) {
+            if (certPath && certPath === 'windows' && windowsCertSerial) {
                 try {
                     console.log('[MAIN] Intentando firmar XML con certificado de Windows:', windowsCertSerial);
+                    console.log('[MAIN] NOTA: El archivo procesado ya está guardado en:', outputPath);
                     
                     // Crear instancia del firmador
                     const signer = new FacturaeSigner();
                     
                     // Cargar el certificado de Windows
                     console.log('[MAIN] Cargando certificado de Windows...');
-                    const cert = await signer.loadCertificate('windows', windowsCertSerial);
-                    console.log('[MAIN] Certificado cargado:', cert.serialNumber);
+                    let cert;
+                    try {
+                        cert = await signer.loadCertificate('windows', windowsCertSerial);
+                        console.log('[MAIN] Certificado cargado:', cert.serialNumber);
+                    } catch (certError) {
+                        console.error('[MAIN] Error al cargar certificado:', certError);
+                        // Si falla la carga del certificado, devolver el archivo procesado sin firmar
+                        const mainWindow = BrowserWindow.getAllWindows()[0];
+                        mainWindow.webContents.send('show-file-preview', {
+                            filePath: outputPath,
+                            fileName: nuevoNombre,
+                            message: 'Archivo procesado guardado. Error al cargar el certificado, el archivo no está firmado.'
+                        });
+                        return {
+                            success: true,
+                            newFileName: nuevoNombre,
+                            outputPath: outputPath,
+                            warning: `Error al cargar el certificado: ${certError.message}. El archivo se guardó sin firmar.`
+                        };
+                    }
                     
                     // Cargar la clave privada (para Windows, será null pero el sistema la manejará)
                     const privateKey = await signer.loadPrivateKey('windows', '');
@@ -155,22 +206,23 @@ ipcMain.handle('process-xml', async (event, filePath, outputFolder, outputFileNa
                         const tempPath = xmlFirmado.replace('__AUTOFIRMA_GUI__:', '');
                         const autofirmaPath = await getAutoFirmaPath();
                         
-                        console.log('[MAIN] Abriendo AutoFirma con el archivo preparado...');
-                        console.log('[MAIN] Archivo temporal:', tempPath);
+                        console.log('[MAIN] Archivo procesado guardado en:', outputPath);
+                        console.log('[MAIN] Archivo temporal para AutoFirma:', tempPath);
                         console.log('[MAIN] Certificado seleccionado:', windowsCertSerial);
                         
+                        // Mostrar el archivo FINAL guardado (no el temporal)
                         const mainWindow = BrowserWindow.getAllWindows()[0];
                         mainWindow.webContents.send('show-file-preview', {
-                            filePath: tempPath,
-                            fileName: path.basename(tempPath),
-                            message: 'El archivo está listo para firmar. AutoFirma se abrirá automáticamente. Por favor, selecciona el certificado y firma el documento.'
+                            filePath: outputPath,
+                            fileName: nuevoNombre,
+                            message: 'El archivo está guardado y listo para firmar. AutoFirma se abrirá automáticamente. Por favor, selecciona el certificado y firma el documento.'
                         });
                         
                         await new Promise(resolve => setTimeout(resolve, 1000));
                         
-                        // Abrir AutoFirma con el archivo como parámetro
+                        // Abrir AutoFirma con el archivo TEMPORAL como parámetro (AutoFirma lo firmará)
                         const { spawn } = require('child_process');
-                        console.log('[MAIN] Ejecutando AutoFirma con archivo:', tempPath);
+                        console.log('[MAIN] Ejecutando AutoFirma con archivo temporal:', tempPath);
                         const autofirmaProcess = spawn(autofirmaPath, [tempPath], {
                             detached: true,
                             stdio: 'ignore'
@@ -179,17 +231,29 @@ ipcMain.handle('process-xml', async (event, filePath, outputFolder, outputFileNa
                         
                         return { 
                             success: true, 
-                            newFileName: path.basename(tempPath),
-                            outputPath: tempPath,
+                            newFileName: nuevoNombre,
+                            outputPath: outputPath,  // Devolver el path REAL donde está guardado
                             autofirmaGui: true,
-                            message: 'Archivo preparado para firmar. Por favor, usa AutoFirma para completar la firma con tu certificado de Windows.'
+                            message: 'Archivo guardado correctamente. Por favor, usa AutoFirma para completar la firma con tu certificado de Windows.'
                         };
                     }
                     
-                    // Si se firmó correctamente, guardar el XML firmado
+                    // Si se firmó correctamente, guardar el XML firmado (sobrescribir el que ya guardamos)
                     console.log('[MAIN] XML firmado correctamente, guardando...');
-                    fs.writeFileSync(outputPath, xmlFirmado);
-                    console.log('[MAIN] XML firmado guardado en:', outputPath);
+                    try {
+                        fs.writeFileSync(outputPath, xmlFirmado, 'utf8');
+                        if (fs.existsSync(outputPath)) {
+                            const stats = fs.statSync(outputPath);
+                            console.log('[MAIN] ✓ XML firmado guardado correctamente');
+                            console.log('[MAIN] ✓ Tamaño del archivo firmado:', stats.size, 'bytes');
+                            console.log('[MAIN] ✓ Ruta completa:', outputPath);
+                        } else {
+                            throw new Error('El archivo firmado no se pudo guardar');
+                        }
+                    } catch (writeError) {
+                        console.error('[MAIN] ✗ ERROR al escribir el archivo firmado:', writeError);
+                        throw writeError;
+                    }
                     
                     // Mostrar el archivo firmado
                     const mainWindow = BrowserWindow.getAllWindows()[0];
@@ -207,18 +271,28 @@ ipcMain.handle('process-xml', async (event, filePath, outputFolder, outputFileNa
                 } catch (error) {
                     console.error('[MAIN] Error al firmar con certificado de Windows:', error);
                     console.error('[MAIN] Stack:', error.stack);
-                    // Si falla la firma directa, intentar con AutoFirma como fallback
-                    console.log('[MAIN] Intentando fallback a AutoFirma...');
+                    // Si falla la firma directa, el archivo ya está guardado, solo abrir AutoFirma
+                    console.log('[MAIN] Error al firmar, pero el archivo procesado ya está guardado en:', outputPath);
+                    console.log('[MAIN] Intentando abrir AutoFirma como fallback...');
                     try {
+                        // Crear archivo temporal para AutoFirma
+                        const tempDir = path.join(app.getPath('temp'), 'facturae-xml');
+                        if (!fs.existsSync(tempDir)) {
+                            fs.mkdirSync(tempDir, { recursive: true });
+                        }
+                        const tempPath = path.join(tempDir, `facturae_input_${Date.now()}.xml`);
+                        fs.writeFileSync(tempPath, xmlModificado);
+                        
                         const autofirmaPath = await getAutoFirmaPath();
                         const mainWindow = BrowserWindow.getAllWindows()[0];
                         mainWindow.webContents.send('show-file-preview', {
                             filePath: outputPath,
-                            fileName: nuevoNombre
+                            fileName: nuevoNombre,
+                            message: 'Archivo guardado correctamente. AutoFirma se abrirá para que puedas firmarlo.'
                         });
-                        await new Promise(resolve => setTimeout(resolve, 500));
+                        await new Promise(resolve => setTimeout(resolve, 1000));
                         const { spawn } = require('child_process');
-                        const autofirmaProcess = spawn(autofirmaPath, [], {
+                        const autofirmaProcess = spawn(autofirmaPath, [tempPath], {
                             detached: true,
                             stdio: 'ignore'
                         });
@@ -231,7 +305,14 @@ ipcMain.handle('process-xml', async (event, filePath, outputFolder, outputFileNa
                             warning: 'No se pudo firmar directamente, usando AutoFirma: ' + error.message
                         };
                     } catch (autofirmaError) {
-                        throw new Error(`Error al firmar: ${error.message}. Error al abrir AutoFirma: ${autofirmaError.message}`);
+                        // Aunque falle AutoFirma, el archivo ya está guardado
+                        console.log('[MAIN] Error al abrir AutoFirma, pero el archivo está guardado en:', outputPath);
+                        return {
+                            success: true,
+                            newFileName: nuevoNombre,
+                            outputPath: outputPath,
+                            warning: 'Archivo guardado pero no se pudo abrir AutoFirma. Puedes firmarlo manualmente.'
+                        };
                     }
                 }
             }
@@ -245,8 +326,26 @@ ipcMain.handle('process-xml', async (event, filePath, outputFolder, outputFileNa
                     const privateKey = await signer.loadPrivateKey(certPath, certPassword);
                     const xmlFirmado = await signer.signXML(xmlModificado, cert, privateKey);
                     
-                    fs.writeFileSync(outputPath, xmlFirmado);
-                    console.log('[MAIN] XML firmado guardado en:', outputPath);
+                    // Asegurar que el directorio existe
+                    const outputDir = path.dirname(outputPath);
+                    if (!fs.existsSync(outputDir)) {
+                        fs.mkdirSync(outputDir, { recursive: true });
+                    }
+                    
+                    try {
+                        fs.writeFileSync(outputPath, xmlFirmado, 'utf8');
+                        if (fs.existsSync(outputPath)) {
+                            const stats = fs.statSync(outputPath);
+                            console.log('[MAIN] ✓ XML firmado guardado correctamente');
+                            console.log('[MAIN] ✓ Tamaño del archivo firmado:', stats.size, 'bytes');
+                            console.log('[MAIN] ✓ Ruta completa:', outputPath);
+                        } else {
+                            throw new Error('El archivo firmado no se pudo guardar');
+                        }
+                    } catch (writeError) {
+                        console.error('[MAIN] ✗ ERROR al escribir el archivo firmado:', writeError);
+                        throw new Error(`Error al guardar el archivo firmado: ${writeError.message}`);
+                    }
                     
                     const mainWindow = BrowserWindow.getAllWindows()[0];
                     mainWindow.webContents.send('show-file-preview', {
@@ -266,15 +365,32 @@ ipcMain.handle('process-xml', async (event, filePath, outputFolder, outputFileNa
                 }
             }
             
-            // Si no hay certificado, solo guardar el XML modificado
-            fs.writeFileSync(outputPath, xmlModificado);
-            console.log('[MAIN] XML guardado en:', outputPath);
+            // Si no hay certificado, el XML ya está guardado arriba
+            console.log('[MAIN] No se seleccionó certificado - solo se modificó el XML');
+            console.log('[MAIN] XML procesado guardado en:', outputPath);
+            
+            // Verificar que el archivo existe antes de devolverlo
+            if (fs.existsSync(outputPath)) {
+                const stats = fs.statSync(outputPath);
+                console.log('[MAIN] ✓ Archivo sin firma guardado correctamente');
+                console.log('[MAIN] ✓ Tamaño:', stats.size, 'bytes');
+            } else {
+                console.error('[MAIN] ✗ ERROR: El archivo no existe después de guardarlo');
+            }
+            
+            // Mostrar el archivo en la vista previa
+            const mainWindow = BrowserWindow.getAllWindows()[0];
+            mainWindow.webContents.send('show-file-preview', {
+                filePath: outputPath,
+                fileName: nuevoNombre
+            });
 
-            // Si no es certificado de Windows, solo devolver el XML modificado
+            // Devolver el XML modificado (sin firma)
             return { 
                 success: true, 
                 newFileName: nuevoNombre,
-                outputPath: outputPath
+                outputPath: outputPath,
+                message: 'Archivo procesado correctamente (sin firmar).'
             };
         } else {
             throw new Error('No se encontró el código de serie en el XML');
@@ -463,9 +579,27 @@ ipcMain.handle('open-file-location', async (event, filePath) => {
     try {
         const { shell } = require('electron');
         const path = require('path');
+        const fs = require('fs');
+        
+        console.log('[MAIN] Abriendo ubicación del archivo:', filePath);
+        
+        // Verificar que el archivo existe
+        if (!fs.existsSync(filePath)) {
+            console.error('[MAIN] El archivo no existe:', filePath);
+            throw new Error('El archivo no existe en la ruta especificada');
+        }
+        
+        // Obtener la carpeta del archivo
         const folderPath = path.dirname(filePath);
-        await shell.openPath(folderPath);
+        console.log('[MAIN] Abriendo carpeta:', folderPath);
+        
+        // Abrir la carpeta en el explorador de Windows
+        // En Windows, usar shell.showItemInFolder para seleccionar el archivo
+        shell.showItemInFolder(filePath);
+        
+        return { success: true };
     } catch (error) {
-        console.error('Error al abrir la ubicación del archivo:', error);
+        console.error('[MAIN] Error al abrir la ubicación del archivo:', error);
+        throw error;
     }
 }); 

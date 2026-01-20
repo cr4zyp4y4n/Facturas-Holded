@@ -451,6 +451,10 @@ document.getElementById('processFile').addEventListener('click', async () => {
 
     // La carpeta de destino es opcional, si no se selecciona se guarda en la misma carpeta del archivo original
     const outputFolderFinal = (!outputFolder || outputFolder === translations[currentLang].noFolder) ? null : outputFolder;
+    
+    console.log('[RENDERER] outputFolder original:', outputFolder);
+    console.log('[RENDERER] outputFolderFinal (después de procesar):', outputFolderFinal);
+    console.log('[RENDERER] outputFolderFinal es null?', outputFolderFinal === null);
 
     // Obtener el tipo de certificado seleccionado
     const certTypeRadios = document.getElementsByName('certType');
@@ -467,30 +471,42 @@ document.getElementById('processFile').addEventListener('click', async () => {
         }
     }
 
+    // El certificado es OPCIONAL - si no se selecciona, solo se modifica el XML sin firmar
     if (certType === 'windows') {
-        // Obtener el certificado de Windows seleccionado
+        // Obtener el certificado de Windows seleccionado (opcional)
         windowsCertSerial = document.getElementById('windowsCertSelected').value;
         console.log('[RENDERER] Certificado Windows seleccionado:', windowsCertSerial);
-        if (!windowsCertSerial || windowsCertSerial.trim() === '') {
-            console.warn('[RENDERER] No se ha seleccionado ningún certificado de Windows');
-            showStatus('error', 'Por favor, selecciona un certificado de Windows');
-            return;
+        if (windowsCertSerial && windowsCertSerial.trim() !== '') {
+            certPath = 'windows';
+        } else {
+            console.log('[RENDERER] No se seleccionó certificado de Windows - solo se modificará el XML sin firmar');
+            certPath = null;
+            windowsCertSerial = null;
         }
-        certPath = 'windows';
     } else if (certType === 'file') {
-        // Obtener el archivo de certificado y la contraseña
+        // Obtener el archivo de certificado y la contraseña (opcional)
         certPath = document.getElementById('certificate').value;
         certPassword = document.getElementById('certPassword').value;
         
-        if (!certPath || certPath === '') {
-            showStatus('error', translations[currentLang].selectCertError || 'Por favor, selecciona un archivo de certificado');
+        if (certPath && certPath !== '' && certPassword && certPassword !== '') {
+            // Hay certificado de archivo completo
+            console.log('[RENDERER] Certificado de archivo seleccionado');
+        } else if (certPath && certPath !== '') {
+            // Hay archivo pero falta contraseña
+            showStatus('error', 'Por favor, introduce la contraseña del certificado');
             return;
+        } else {
+            // No hay certificado - solo modificar
+            console.log('[RENDERER] No se seleccionó certificado de archivo - solo se modificará el XML sin firmar');
+            certPath = null;
+            certPassword = null;
         }
-        
-        if (!certPassword || certPassword === '') {
-            showStatus('error', translations[currentLang].enterPasswordError || 'Por favor, introduce la contraseña del certificado');
-            return;
-        }
+    } else {
+        // No hay tipo de certificado seleccionado - solo modificar
+        console.log('[RENDERER] No se seleccionó ningún tipo de certificado - solo se modificará el XML sin firmar');
+        certPath = null;
+        certPassword = null;
+        windowsCertSerial = null;
     }
 
     try {
@@ -516,9 +532,16 @@ document.getElementById('processFile').addEventListener('click', async () => {
         );
 
         console.log('[RENDERER] Resultado del procesamiento:', result);
+        console.log('[RENDERER] outputPath devuelto:', result?.outputPath);
+        console.log('[RENDERER] newFileName devuelto:', result?.newFileName);
         hideLoader();
 
         if (result && result.success) {
+            // Verificar que el archivo existe
+            if (result.outputPath) {
+                console.log('[RENDERER] Verificando que el archivo existe en:', result.outputPath);
+                // No podemos verificar directamente desde el renderer, pero podemos loguear
+            }
             // Mostrar mensaje diferente si se usó AutoFirma
             if (result.autofirmaGui) {
                 showStatus('info', `Archivo procesado y preparado para firmar. AutoFirma se ha abierto automáticamente. Por favor, selecciona tu certificado en AutoFirma y completa la firma.`);
@@ -528,12 +551,71 @@ document.getElementById('processFile').addEventListener('click', async () => {
                 showStatus('success', `${translations[currentLang].success}${result.newFileName}`);
             }
             
-            // Ocultar formulario y mostrar solo la vista previa y el botón de procesar otro archivo
-            document.getElementById('file-input-container').style.display = 'none';
-            document.getElementById('preview-container-outer').style.display = 'block';
+            // Ocultar formulario y sección de certificados, mostrar solo la vista previa y el botón de procesar otro archivo
+            const fileInputContainer = document.getElementById('file-input-container');
+            const previewContainerOuter = document.getElementById('preview-container-outer');
             const preview = document.getElementById('file-preview-container');
-            preview.style.display = 'block';
-            document.getElementById('openFileLocation').style.display = 'inline-flex';
+            const openLocationButton = document.getElementById('openFileLocation');
+            const fileNameElement = document.getElementById('preview-file-name');
+            const filePathElement = document.getElementById('preview-file-path');
+            const certificateSection = document.getElementById('certificate-section-main');
+            const certificateInfoMessage = document.getElementById('certificate-info-message');
+            
+            if (fileInputContainer) {
+                fileInputContainer.style.display = 'none';
+            }
+            
+            // Ocultar la sección de certificados
+            if (certificateSection) {
+                certificateSection.style.display = 'none';
+                console.log('[RENDERER] Sección de certificados ocultada');
+            }
+            
+            // Ocultar el mensaje informativo sobre certificados
+            if (certificateInfoMessage) {
+                certificateInfoMessage.style.display = 'none';
+                console.log('[RENDERER] Mensaje informativo de certificados ocultado');
+            }
+            
+            if (previewContainerOuter) {
+                previewContainerOuter.style.display = 'block';
+            }
+            
+            if (preview) {
+                preview.style.display = 'block';
+            }
+            
+            if (openLocationButton) {
+                openLocationButton.style.display = 'inline-flex';
+            }
+            
+            // Asegurar que la información del archivo se muestre
+            if (result.outputPath && result.newFileName) {
+                if (fileNameElement) {
+                    fileNameElement.textContent = result.newFileName;
+                    console.log('[RENDERER] Nombre del archivo actualizado:', result.newFileName);
+                }
+                if (filePathElement) {
+                    filePathElement.textContent = result.outputPath;
+                    console.log('[RENDERER] Ruta del archivo actualizada:', result.outputPath);
+                }
+                
+                // Configurar el botón de abrir ubicación
+                if (openLocationButton && result.outputPath) {
+                    openLocationButton.onclick = async () => {
+                        try {
+                            console.log('[RENDERER] Abriendo ubicación del archivo:', result.outputPath);
+                            const openResult = await ipcRenderer.invoke('open-file-location', result.outputPath);
+                            if (openResult && openResult.success) {
+                                console.log('[RENDERER] Ubicación abierta correctamente');
+                            }
+                        } catch (error) {
+                            console.error('[RENDERER] Error al abrir la ubicación:', error);
+                            showStatus('error', 'Error al abrir la ubicación del archivo: ' + (error.message || error));
+                        }
+                    };
+                }
+            }
             
             // Si se usó AutoFirma, mostrar mensaje adicional
             if (result.autofirmaGui) {
@@ -565,10 +647,42 @@ document.getElementById('processFile').addEventListener('click', async () => {
                 document.getElementById('preview-container-outer').style.display = 'none';
                 document.getElementById('file-input-container').style.display = '';
                 btn.style.display = 'none';
+                
+                // Mostrar de nuevo la sección de certificados
+                const certificateSection = document.getElementById('certificate-section-main');
+                const certificateInfoMessage = document.getElementById('certificate-info-message');
+                
+                if (certificateSection) {
+                    certificateSection.style.display = 'block';
+                    console.log('[RENDERER] Sección de certificados mostrada de nuevo');
+                }
+                
+                if (certificateInfoMessage) {
+                    certificateInfoMessage.style.display = 'block';
+                    console.log('[RENDERER] Mensaje informativo de certificados mostrado de nuevo');
+                }
+                
                 // Limpiar campos
                 document.getElementById('selectedFile').textContent = translations[currentLang].noFile;
                 document.getElementById('selectedFolder').textContent = translations[currentLang].noFolder;
                 document.getElementById('outputFileName').value = '';
+                
+                // Limpiar selección de certificado
+                const windowsCertSelected = document.getElementById('windowsCertSelected');
+                if (windowsCertSelected) {
+                    windowsCertSelected.value = '';
+                }
+                
+                // Deseleccionar certificados visualmente
+                const certCards = document.querySelectorAll('.cert-card');
+                certCards.forEach(card => {
+                    card.style.border = '2px solid #81C784';
+                    card.style.background = '#E8F5E9';
+                    card.style.boxShadow = 'none';
+                    card.style.transform = 'scale(1)';
+                    card.removeAttribute('data-selected');
+                });
+                
                 showStatus('', '');
             };
         } else {
@@ -585,31 +699,65 @@ document.getElementById('processFile').addEventListener('click', async () => {
 
 // Escuchar el evento para mostrar la vista previa
 ipcRenderer.on('show-file-preview', (event, data) => {
-    console.log('Mostrando vista previa del archivo:', data);
+    console.log('[RENDERER] Mostrando vista previa del archivo:', data);
+    
+    const previewContainerOuter = document.getElementById('preview-container-outer');
     const container = document.getElementById('file-preview-container');
     const fileNameElement = document.getElementById('preview-file-name');
     const filePathElement = document.getElementById('preview-file-path');
     const openLocationButton = document.getElementById('openFileLocation');
+    const previewTitle = document.getElementById('preview-title');
+    const previewSubtitle = document.getElementById('preview-subtitle');
 
     if (!container || !fileNameElement || !filePathElement || !openLocationButton) {
-        console.error('No se encontraron los elementos necesarios para mostrar la vista previa');
+        console.error('[RENDERER] No se encontraron los elementos necesarios para mostrar la vista previa');
+        console.error('[RENDERER] container:', container);
+        console.error('[RENDERER] fileNameElement:', fileNameElement);
+        console.error('[RENDERER] filePathElement:', filePathElement);
+        console.error('[RENDERER] openLocationButton:', openLocationButton);
         return;
     }
 
-    fileNameElement.textContent = data.fileName;
-    filePathElement.textContent = data.filePath;
+    // Actualizar el contenido
+    fileNameElement.textContent = data.fileName || 'Archivo procesado';
+    filePathElement.textContent = data.filePath || '';
+    
+    // Actualizar título y subtítulo si hay mensaje personalizado
+    if (data.message && previewSubtitle) {
+        previewSubtitle.textContent = data.message;
+    }
+    
+    // Mostrar los contenedores
+    if (previewContainerOuter) {
+        previewContainerOuter.style.display = 'block';
+    }
     container.style.display = 'block';
     openLocationButton.style.display = 'inline-flex';
+    
+    console.log('[RENDERER] Vista previa actualizada:');
+    console.log('[RENDERER] - Nombre:', fileNameElement.textContent);
+    console.log('[RENDERER] - Ruta:', filePathElement.textContent);
 
     // Botón para abrir la ubicación del archivo
-    openLocationButton.onclick = async () => {
-        try {
-            await ipcRenderer.invoke('open-file-location', data.filePath);
-        } catch (error) {
-            console.error('Error al abrir la ubicación:', error);
-            showStatus('error', 'Error al obrir la ubicació de l\'arxiu');
-        }
-    };
+    if (openLocationButton && data.filePath) {
+        openLocationButton.onclick = async () => {
+            try {
+                console.log('[RENDERER] Abriendo ubicación del archivo:', data.filePath);
+                const result = await ipcRenderer.invoke('open-file-location', data.filePath);
+                if (result && result.success) {
+                    console.log('[RENDERER] Ubicación abierta correctamente');
+                }
+            } catch (error) {
+                console.error('[RENDERER] Error al abrir la ubicación:', error);
+                showStatus('error', 'Error al abrir la ubicación del archivo: ' + (error.message || error));
+            }
+        };
+    } else {
+        console.warn('[RENDERER] No se pudo configurar el botón de abrir ubicación:', {
+            openLocationButton: !!openLocationButton,
+            filePath: data.filePath
+        });
+    }
 });
 
 function mostrarSelectorArchivoFirmado(xmlOriginalPath) {
